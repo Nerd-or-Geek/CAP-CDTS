@@ -1,0 +1,10 @@
+# Cross compilation config (used by `cross` / GitHub Actions)
+# We link against system SQLite on Linux to make Raspberry Pi builds much faster.
+# For cross-compiling, install the target-arch SQLite dev package inside the container.
+
+[target.arm-unknown-linux-gnueabihf]
+pre-build = [
+  "dpkg --add-architecture armhf || true",
+  "apt-get update",
+  "apt-get install -y --no-install-recommends pkg-config libsqlite3-dev:armhf",
+]

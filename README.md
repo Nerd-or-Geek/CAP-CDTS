@@ -31,8 +31,8 @@ A beautiful cyberpunk RFID reader/writer for Raspberry Pi Zero + RC522, with a p
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/rfid-cyberdeck-rust
-cd rfid-cyberdeck-rust
+git clone https://github.com/Nerd-or-Geek/CAP-CDTS
+cd CAP-CDTS
 
 # Build (on any platform)
 cargo build --release
@@ -73,13 +73,13 @@ sudo raspi-config
 ```bash
 # Install SQLite dev libraries
 sudo apt update
-sudo apt install -y libsqlite3-dev
+sudo apt install -y libsqlite3-dev pkg-config
 
 # Clone and build
-git clone https://github.com/yourusername/rfid-cyberdeck-rust
-cd rfid-cyberdeck-rust
+git clone https://github.com/Nerd-or-Geek/CAP-CDTS
+cd CAP-CDTS
 
-# Build release (takes ~5 minutes on Pi Zero)
+# Build release (Pi Zero can take a long time the first build)
 cargo build --release
 
 # Run with elevated privileges (for GPIO)
@@ -107,7 +107,7 @@ Returns app version and repo info:
 ```json
 {
   "version": "0.1.0",
-  "repo": "yourusername/rfid-cyberdeck-rust",
+  "repo": "Nerd-or-Geek/CAP-CDTS",
   "status": "ok"
 }
 ```
@@ -189,7 +189,7 @@ curl -X POST http://localhost:8080/api/update
    git add .
    git commit -m "Initial commit"
    git branch -M main
-   git remote add origin https://github.com/yourusername/rfid-cyberdeck-rust.git
+  git remote add origin https://github.com/Nerd-or-Geek/CAP-CDTS.git
    git push -u origin main
    ```
 
@@ -215,12 +215,15 @@ curl -X POST http://localhost:8080/api/update
 
 ## How the Self-Updater Works
 
-The `self_update` crate handles:
+On Linux (Raspberry Pi), the updater prefers a **prebuilt GitHub Release binary** to avoid long compiles on-device:
 
-1. **Checking GitHub API** for the latest release
-2. **Downloading** the binary matching your target (e.g., `arm-unknown-linux-gnueabihf`)
-3. **Replacing** the running binary
-4. **Restarting** the service
+1. Downloads `https://github.com/<owner>/<repo>/releases/latest/download/rfid-cyberdeck-rust` (via `curl` or `wget`)
+2. Atomically swaps the on-disk binary
+3. Restarts the app
+
+If no Release asset exists, it falls back to **cloning the repo + building** in the background, then swaps/restarts.
+
+Either way, the currently running version keeps serving requests until the new binary is ready.
 
 Environment variable override:
 
@@ -254,7 +257,7 @@ rfid-cyberdeck-rust/
 
 ### Repository Owner/Name
 
-By default, the updater looks for `yourusername/rfid-cyberdeck-rust`. Change it:
+By default, the updater looks for `Nerd-or-Geek/CAP-CDTS`. Change it:
 
 1. **Via environment variable:**
    ```bash
@@ -266,7 +269,7 @@ By default, the updater looks for `yourusername/rfid-cyberdeck-rust`. Change it:
    Edit the default in `src/main.rs`:
    ```rust
    let repo = option_env!("RFID_CYBERDECK_REPO")
-       .unwrap_or("yourusername/rfid-cyberdeck-rust")
+       .unwrap_or("Nerd-or-Geek/CAP-CDTS")
    ```
 
 ---
@@ -283,8 +286,8 @@ After=network.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/rfid-cyberdeck-rust
-ExecStart=/home/pi/rfid-cyberdeck-rust/target/release/rfid-cyberdeck-rust
+WorkingDirectory=/home/pi/CAP-CDTS
+ExecStart=/home/pi/CAP-CDTS/target/release/rfid-cyberdeck-rust
 Restart=on-failure
 RestartSec=10
 
@@ -384,7 +387,7 @@ MIT License — See [LICENSE](LICENSE)
 - **Axum** — Lightweight async web framework
 - **Tokio** — Async runtime
 - **rusqlite** — SQLite bindings
-- **self_update** — GitHub release auto-update
+- **Built-in updater** — GitHub Release binary download (with source-build fallback)
 - **Tailwind CSS** — Styling (CDN)
 - **Font Awesome** — Icons (CDN)
 
@@ -399,7 +402,7 @@ Contributions welcome! Fork, create a feature branch, and submit a PR.
 ## Contact
 
 For issues, suggestions, or questions:  
-Open an issue on [GitHub](https://github.com/yourusername/rfid-cyberdeck-rust/issues)
+Open an issue on [GitHub](https://github.com/Nerd-or-Geek/CAP-CDTS/issues)
 
 ---
 

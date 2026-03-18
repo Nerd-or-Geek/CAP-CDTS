@@ -127,8 +127,9 @@
       <!-- Header -->
       <div class="mb-6">
         <h1 class="text-5xl neon text-center mb-2 heading">RFID CYBERDECK</h1>
-        <div class="flex justify-between items-center">
+        <div class="flex flex-wrap justify-between items-center gap-3">
           <span class="neon-purple text-lg"><i class="fas fa-microchip"></i> v<span id="version">?.?.?</span></span>
+          <span class="text-xs text-gray-400 heading">MODE: <span id="mode" class="neon">OFF</span></span>
           <button id="check-update" class="btn-cyber px-4 py-2 text-sm flex items-center gap-2">
             <i class="fas fa-sync-alt"></i> Check Update
           </button>
@@ -199,6 +200,51 @@
     let currentText = "";
     let version = "0.0.0";
     let repo = "";
+    let mode = "off";
+
+    let autoReadTimer = null;
+    let statusPollTimer = null;
+
+    function setButtonEnabled(id, enabled) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.disabled = !enabled;
+      el.classList.toggle('opacity-40', !enabled);
+      el.classList.toggle('cursor-not-allowed', !enabled);
+    }
+
+    function applyMode(nextMode) {
+      // Stop any previous auto-read loop
+      if (autoReadTimer) {
+        clearInterval(autoReadTimer);
+        autoReadTimer = null;
+      }
+
+      // Hide write UI whenever mode changes
+      document.getElementById('write-panel').classList.add('hidden');
+
+      if (nextMode === 'read') {
+        // Continuous reading mode: backend reads constantly; UI polls for last read.
+        setButtonEnabled('read-btn', false);
+        setButtonEnabled('write-btn', false);
+        setButtonEnabled('write-confirm', false);
+
+        // Quick initial refresh then poll.
+        readCard(true);
+        autoReadTimer = setInterval(() => readCard(true), 600);
+      } else if (nextMode === 'write') {
+        setButtonEnabled('read-btn', false);
+        setButtonEnabled('write-btn', true);
+        setButtonEnabled('write-confirm', true);
+        document.getElementById('label-display').textContent = "WRITE mode: enter text, then tap WRITE";
+      } else {
+        // OFF
+        setButtonEnabled('read-btn', false);
+        setButtonEnabled('write-btn', false);
+        setButtonEnabled('write-confirm', false);
+        document.getElementById('label-display').textContent = "OFF: flip the hardware switch to READ or WRITE";
+      }
+    }
 
     async function fetchStatus() {
       try {
@@ -208,27 +254,45 @@
         repo = data.repo || "Nerd-or-Geek/CAP-CDTS";
         document.getElementById('version').textContent = version;
         document.getElementById('github-link').href = `https://github.com/${repo}`;
+
+        const nextMode = (data.mode || "off").toString().toLowerCase();
+        if (nextMode !== mode) {
+          mode = nextMode;
+          document.getElementById('mode').textContent = mode.toUpperCase();
+          applyMode(mode);
+        }
       } catch (e) {
         console.error('Status fetch error:', e);
       }
     }
 
-    async function readCard() {
+    async function readCard(silent = false) {
       try {
         const res = await fetch('/api/read');
         const data = await res.json();
         if (data.success) {
+          const changed = (data.uid !== currentUID) || (data.text !== currentText);
           currentUID = data.uid;
           currentText = data.text;
-          document.getElementById('uid').textContent = currentUID;
-          document.getElementById('card-text').value = currentText;
-          highlightCard(currentUID);
-          await fetchCards();
+
+          if (changed) {
+            document.getElementById('uid').textContent = currentUID || "────";
+            document.getElementById('card-text').value = currentText || "";
+            document.getElementById('label-display').textContent = currentLabel || "";
+            highlightCard(currentUID);
+            await fetchCards();
+          }
         } else {
-          alert("Read failed: " + data.text);
+          // In READ mode we poll constantly; do not spam alerts.
+          document.getElementById('label-display').textContent = data.text || "Waiting...";
+          if (!silent) {
+            alert("Read failed: " + data.text);
+          }
         }
       } catch (e) {
-        alert("Error: " + e.message);
+        if (!silent) {
+          alert("Error: " + e.message);
+        }
       }
     }
 
@@ -307,6 +371,7 @@
 
     // Write mode toggle
     document.getElementById('write-btn').addEventListener('click', () => {
+      if (mode !== 'write') return;
       document.getElementById('write-panel').classList.toggle('hidden');
       document.getElementById('write-input').value = currentText;
       document.getElementById('write-input').focus();
@@ -321,8 +386,8 @@
       }
     });
 
-    // Read button
-    document.getElementById('read-btn').addEventListener('click', readCard);
+    // Read button (disabled in READ mode because we auto-poll)
+    document.getElementById('read-btn').addEventListener('click', () => readCard(false));
 
     // Update check
     document.getElementById('check-update').addEventListener('click', async () => {
@@ -344,15 +409,25 @@
           status.textContent = `Update available: v${latest}`;
           btn.style.display = "block";
           btn.onclick = async () => {
-            status.textContent = "Downloading and installing...";
+            status.textContent = "Starting background update. App will continue running and restart once complete...";
             document.getElementById('progress-bar').classList.remove('hidden');
-            document.getElementById('progress-fill').style.width = "30%";
+            
+            // Simulate progress (actual build happens in background)
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+              progress += Math.random() * 15;
+              if (progress > 90) progress = 90;
+              document.getElementById('progress-fill').style.width = progress + "%";
+            }, 1000);
 
             await fetch('/api/update', { method: 'POST' });
 
-            document.getElementById('progress-fill').style.width = "100%";
-            status.textContent = "Update installed! Restarting in 3s...";
-            setTimeout(() => location.reload(), 3000);
+            // Continue showing progress for a bit
+            setTimeout(() => {
+              clearInterval(progressInterval);
+              document.getElementById('progress-fill').style.width = "100%";
+              status.textContent = "Update installing in background. App will restart automatically when ready...";
+            }, 3000);
           };
         } else {
           panel.classList.remove('hidden');
@@ -367,6 +442,9 @@
     // Initial load
     fetchStatus();
     fetchCards();
+
+    // Poll status so the UI follows the physical mode switch.
+    statusPollTimer = setInterval(fetchStatus, 1000);
   </script>
 </body>
 </html>

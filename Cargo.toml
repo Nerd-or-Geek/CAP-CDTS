@@ -8,20 +8,27 @@ license = "MIT"
 
 [dependencies]
 axum = "0.7"
-tokio = { version = "1.37", features = ["full"] }
+tokio = { version = "1.37", features = ["macros", "rt-multi-thread", "signal", "net"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-rusqlite = { version = "0.31", features = ["bundled"] }
-self_update = "0.39"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-once_cell = "1.19"
 parking_lot = "0.12"
-tower = "0.4"
 tower-http = { version = "0.5", features = ["cors"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# GPIO input for the mode switch on Raspberry Pi
+rppal = "0.17"
+# Link against system SQLite on Linux (much faster to build on Pi than compiling bundled SQLite)
+rusqlite = { version = "0.31" }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+# Non-Linux dev builds are easiest with bundled SQLite (no system libs needed)
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 [profile.release]
 strip = true
-lto = true
-codegen-units = 1
+# Faster compiles on low-power devices (Pi Zero). Enable LTO later if you truly need it.
+lto = false
+codegen-units = 16
+opt-level = 2
 panic = "abort"
