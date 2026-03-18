@@ -547,13 +547,88 @@ fn updater_root_dir() -> PathBuf {
     std::env::temp_dir().join("cap-cdts-updater")
 }
 
-fn perform_background_update(repo_url: &str) -> Result<(), String> {
-    let root = updater_root_dir();
+fn python_rebuild_script_path() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("tools").join("rebuild.py"));
+        candidates.push(cwd.join("rebuild.py"));
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            // Common layouts:
+            // - repo_root/target/release/<bin>
+            // - repo_root/<bin>
+            candidates.push(exe_dir.join("tools").join("rebuild.py"));
+            candidates.push(exe_dir.join("rebuild.py"));
+
+            // Try to walk up a few levels (target/release -> repo root)
+            let mut p = exe_dir.to_path_buf();
+            for _ in 0..4 {
+                if let Some(parent) = p.parent() {
+                    candidates.push(parent.join("tools").join("rebuild.py"));
+                    p = parent.to_path_buf();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    candidates.into_iter().find(|p| p.exists())
+}
+
+fn try_python_source_build(repo_url: &str, root: &PathBuf, built_exe_name: &str) -> Result<PathBuf, String> {
+    let script = python_rebuild_script_path()
+        .ok_or_else(|| "Python rebuild script not found (expected tools/rebuild.py)".to_string())?;
+
+    let root_str = root.to_string_lossy().to_string();
+
+    // Try python3 then python.
+    for py in ["python3", "python"] {
+        let out = Command::new(py)
+            .arg(&script)
+            .arg("--repo-url")
+            .arg(repo_url)
+            .arg("--updater-root")
+            .arg(&root_str)
+            .arg("--bin-name")
+            .arg(built_exe_name)
+            .output();
+
+        match out {
+            Ok(out) => {
+                if !out.status.success() {
+                    return Err(format!(
+                        "Python rebuild failed ({py}): {}",
+                        String::from_utf8_lossy(&out.stderr)
+                    ));
+                }
+
+                let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if path.is_empty() {
+                    return Err("Python rebuild produced no artifact path".to_string());
+                }
+
+                let artifact = PathBuf::from(path);
+                if !artifact.exists() {
+                    return Err(format!("Python rebuild artifact does not exist: {artifact:?}"));
+                }
+
+                return Ok(artifact);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(format!("Failed to launch {py}: {e}")),
+        }
+    }
+
+    Err("Python executable not found (install python3)".to_string())
+}
+
+fn build_from_source_rust(repo_url: &str, root: &PathBuf, built_exe_name: &str) -> Result<PathBuf, String> {
     let clone_dir = root.join("src");
     let target_dir = root.join("cargo-target");
-
-    fs::create_dir_all(&root)
-        .map_err(|e| format!("Failed to create updater dir {root:?}: {e}"))?;
 
     // Fresh clone each time, but keep the Cargo target dir cached so builds are fast.
     let _ = fs::remove_dir_all(&clone_dir);
@@ -604,7 +679,20 @@ fn perform_background_update(repo_url: &str) -> Result<(), String> {
         ));
     }
 
-    info!("Build completed successfully. Preparing to switch binaries...");
+    let new_binary = target_dir.join("release").join(built_exe_name);
+    if !new_binary.exists() {
+        return Err(format!("Built binary not found at {:?}", new_binary));
+    }
+
+    Ok(new_binary)
+}
+
+fn perform_background_update(repo_url: &str) -> Result<(), String> {
+    let root = updater_root_dir();
+    fs::create_dir_all(&root)
+        .map_err(|e| format!("Failed to create updater dir {root:?}: {e}"))?;
+
+    info!("Preparing update build...");
 
     let current_exe = std::env::current_exe()
         .map_err(|e| format!("Failed to get current executable: {e}"))?;
@@ -615,10 +703,20 @@ fn perform_background_update(repo_url: &str) -> Result<(), String> {
         BIN_NAME.to_string()
     };
 
-    let new_binary = target_dir.join("release").join(&built_exe_name);
-    if !new_binary.exists() {
-        return Err(format!("Built binary not found at {:?}", new_binary));
-    }
+    // Prefer Python rebuild on Linux to build in a fresh folder, but fall back to internal build.
+    let new_binary = if cfg!(target_os = "linux") {
+        match try_python_source_build(repo_url, &root, &built_exe_name) {
+            Ok(p) => p,
+            Err(e) => {
+                warn!("Python rebuild unavailable, falling back to internal build: {e}");
+                build_from_source_rust(repo_url, &root, &built_exe_name)?
+            }
+        }
+    } else {
+        build_from_source_rust(repo_url, &root, &built_exe_name)?
+    };
+
+    info!("Build completed successfully. Preparing to switch binaries...");
 
     info!("New binary ready at {:?}", new_binary);
     info!("Swapping binaries and restarting...");
