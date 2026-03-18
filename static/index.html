@@ -188,7 +188,7 @@
       <!-- Footer -->
       <div class="text-center text-xs text-gray-500 border-t border-purple-500 pt-4">
         &copy; 2026 RFID Cyberdeck |
-        <a href="https://github.com/yourusername/rfid-cyberdeck-rust" class="neon-purple hover:underline">GitHub</a>
+        <a id="github-link" href="#" class="neon-purple hover:underline">GitHub</a>
       </div>
     </div>
   </div>
@@ -205,8 +205,9 @@
         const res = await fetch('/api/status');
         const data = await res.json();
         version = data.version || "0.0.0";
-        repo = data.repo || "yourusername/rfid-cyberdeck-rust";
+        repo = data.repo || "Nerd-or-Geek/CAP-CDTS";
         document.getElementById('version').textContent = version;
+        document.getElementById('github-link').href = `https://github.com/${repo}`;
       } catch (e) {
         console.error('Status fetch error:', e);
       }

@@ -205,8 +205,8 @@ fn do_self_update(repo: &str) -> Result<(), String> {
     use self_update::cargo_crate_version;
 
     let parts: Vec<&str> = repo.split('/').collect();
-    let owner = parts.get(0).copied().unwrap_or("yourusername");
-    let name = parts.get(1).copied().unwrap_or("rfid-cyberdeck-rust");
+    let owner = parts.get(0).copied().unwrap_or("Nerd-or-Geek");
+    let name = parts.get(1).copied().unwrap_or("CAP-CDTS");
 
     info!("Checking for update from {}/{}", owner, name);
 
@@ -256,7 +256,7 @@ async fn main() {
 
     let version = env!("CARGO_PKG_VERSION").to_string();
     let repo = option_env!("RFID_CYBERDECK_REPO")
-        .unwrap_or("yourusername/rfid-cyberdeck-rust")
+        .unwrap_or("Nerd-or-Geek/CAP-CDTS")
         .to_string();
 
     let state = AppState {
