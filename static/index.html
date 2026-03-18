@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RFID Cyberdeck</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <style>
+    * {
+      font-family: 'Roboto Mono', 'Orbitron', monospace;
+    }
+    h1, h2, h3, .heading {
+      font-family: 'Orbitron', monospace;
+      font-weight: 700;
+    }
+    body {
+      background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+      color: #e0e0ff;
+      min-height: 100vh;
+    }
+    .neon {
+      text-shadow: 0 0 8px #0ff, 0 0 16px #0ff, 0 0 32px #0ff;
+      color: #00fff7;
+    }
+    .neon-purple {
+      text-shadow: 0 0 8px #a0f, 0 0 16px #a0f, 0 0 32px #a0f;
+      color: #a259ff;
+    }
+    .btn-cyber {
+      background: linear-gradient(90deg, #00fff7 0%, #a259ff 100%);
+      color: #18181b;
+      font-weight: 700;
+      border: none;
+      border-radius: 0.5rem;
+      box-shadow: 0 0 12px #0ff, 0 0 20px #a0f;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .btn-cyber:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 16px #0ff, 0 0 24px #a0f;
+    }
+    .btn-cyber:active {
+      transform: scale(0.97);
+    }
+    .panel {
+      background: rgba(15, 32, 39, 0.8);
+      border: 2px solid #a259ff;
+      border-radius: 1rem;
+      box-shadow: 0 0 20px #a259ff66, inset 0 0 10px #a259ff11;
+      padding: 1.5rem;
+      backdrop-filter: blur(10px);
+    }
+    .input-cyber {
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid #00fff7;
+      color: #00fff7;
+      font-family: 'Roboto Mono', monospace;
+      padding: 0.5rem;
+      border-radius: 0.25rem;
+      transition: all 0.3s;
+    }
+    .input-cyber:focus {
+      outline: none;
+      box-shadow: 0 0 8px #0ff, inset 0 0 4px #0ff22;
+      border-color: #a259ff;
+      color: #a259ff;
+    }
+    .scrollbar::-webkit-scrollbar {
+      width: 8px;
+      background: #18181b;
+    }
+    .scrollbar::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, #a259ff, #00fff7);
+      border-radius: 4px;
+    }
+    .card-item {
+      background: rgba(0, 127, 255, 0.05);
+      border-left: 3px solid #00fff7;
+      padding: 0.75rem;
+      border-radius: 0.25rem;
+      transition: all 0.2s;
+    }
+    .card-item:hover {
+      background: rgba(162, 89, 255, 0.1);
+      border-left-color: #a259ff;
+      box-shadow: 0 0 8px #a259ff44;
+    }
+    .card-item.active {
+      background: rgba(162, 89, 255, 0.2);
+      border-left-color: #a259ff;
+      box-shadow: 0 0 12px #a259ff77;
+    }
+    .scanline {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 255, 247, 0.03),
+        rgba(0, 255, 247, 0.03) 1px,
+        transparent 1px,
+        transparent 2px
+      );
+      z-index: -1;
+    }
+    .glitch {
+      animation: glitch 0.3s;
+    }
+    @keyframes glitch {
+      0% { text-shadow: -2px 0 #a259ff, 2px 0 #00fff7; }
+      50% { text-shadow: 2px 0 #a259ff, -2px 0 #00fff7; }
+      100% { text-shadow: -2px 0 #00fff7, 2px 0 #a259ff; }
+    }
+  </style>
+</head>
+<body>
+  <div class="scanline"></div>
+  <div class="flex flex-col items-center justify-center min-h-screen py-8">
+    <div class="w-full max-w-4xl mx-auto px-4 panel">
+      <!-- Header -->
+      <div class="mb-6">
+        <h1 class="text-5xl neon text-center mb-2 heading">RFID CYBERDECK</h1>
+        <div class="flex justify-between items-center">
+          <span class="neon-purple text-lg"><i class="fas fa-microchip"></i> v<span id="version">?.?.?</span></span>
+          <button id="check-update" class="btn-cyber px-4 py-2 text-sm flex items-center gap-2">
+            <i class="fas fa-sync-alt"></i> Check Update
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Content -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <!-- Left Panel: Control -->
+        <div class="lg:col-span-2">
+          <!-- Current Card Display -->
+          <div class="mb-6 p-4 bg-black bg-opacity-40 rounded border border-cyan-500">
+            <div class="text-lg neon-purple mb-2 heading"><i class="fas fa-id-card"></i> Current Card</div>
+            <div class="font-mono text-3xl neon mb-2" id="uid">────</div>
+            <div class="text-sm text-gray-400" id="label-display"></div>
+            <textarea id="card-text" class="w-full bg-black bg-opacity-60 text-cyan-200 font-mono rounded p-2 mt-2 border border-cyan-500 focus:border-purple-500 focus:shadow-lg" rows="3" readonly></textarea>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="grid grid-cols-2 gap-4 mb-6">
+            <button id="read-btn" class="btn-cyber px-6 py-4 text-lg flex items-center justify-center gap-2">
+              <i class="fas fa-rss"></i> READ
+            </button>
+            <button id="write-btn" class="btn-cyber px-6 py-4 text-lg flex items-center justify-center gap-2">
+              <i class="fas fa-pen"></i> WRITE
+            </button>
+          </div>
+
+          <!-- Write Panel (Hidden) -->
+          <div id="write-panel" class="hidden mb-6 p-4 bg-black bg-opacity-40 rounded border border-purple-500">
+            <label class="text-sm neon-purple mb-2 block heading">Enter text to write:</label>
+            <input id="write-input" class="input-cyber w-full mb-3" placeholder="Type here..." />
+            <button id="write-confirm" class="btn-cyber w-full px-4 py-3 flex items-center justify-center gap-2">
+              <i class="fas fa-check"></i> Write to Card
+            </button>
+          </div>
+
+          <!-- Update Panel (Hidden) -->
+          <div id="update-panel" class="hidden mb-6 p-4 bg-black bg-opacity-40 rounded border border-cyan-500">
+            <div class="text-cyan-300 mb-2 text-sm" id="update-status">Checking...</div>
+            <div id="progress-bar" class="w-full bg-black rounded h-2 mb-2 hidden">
+              <div id="progress-fill" class="bg-gradient-to-r from-cyan-500 to-purple-500 h-full rounded" style="width: 0%"></div>
+            </div>
+            <button id="install-update" class="btn-cyber w-full px-4 py-3 flex items-center justify-center gap-2">
+              <i class="fas fa-download"></i> Install Now
+            </button>
+          </div>
+        </div>
+
+        <!-- Right Panel: Card Library -->
+        <div class="panel scrollbar overflow-y-auto max-h-96">
+          <div class="text-lg neon mb-4 heading"><i class="fas fa-list"></i> Tag Library</div>
+          <ul id="card-list" class="space-y-2"></ul>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="text-center text-xs text-gray-500 border-t border-purple-500 pt-4">
+        &copy; 2026 RFID Cyberdeck |
+        <a href="https://github.com/yourusername/rfid-cyberdeck-rust" class="neon-purple hover:underline">GitHub</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentUID = "";
+    let currentLabel = "";
+    let currentText = "";
+    let version = "0.0.0";
+    let repo = "";
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        version = data.version || "0.0.0";
+        repo = data.repo || "yourusername/rfid-cyberdeck-rust";
+        document.getElementById('version').textContent = version;
+      } catch (e) {
+        console.error('Status fetch error:', e);
+      }
+    }
+
+    async function readCard() {
+      try {
+        const res = await fetch('/api/read');
+        const data = await res.json();
+        if (data.success) {
+          currentUID = data.uid;
+          currentText = data.text;
+          document.getElementById('uid').textContent = currentUID;
+          document.getElementById('card-text').value = currentText;
+          highlightCard(currentUID);
+          await fetchCards();
+        } else {
+          alert("Read failed: " + data.text);
+        }
+      } catch (e) {
+        alert("Error: " + e.message);
+      }
+    }
+
+    async function writeCard(text) {
+      try {
+        const res = await fetch('/api/write', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (data.success) {
+          currentUID = data.uid;
+          currentText = data.text;
+          document.getElementById('uid').textContent = currentUID;
+          document.getElementById('card-text').value = currentText;
+          highlightCard(currentUID);
+          await fetchCards();
+          document.getElementById('write-panel').classList.add('hidden');
+        } else {
+          alert("Write failed: " + data.text);
+        }
+      } catch (e) {
+        alert("Error: " + e.message);
+      }
+    }
+
+    async function fetchCards() {
+      try {
+        const res = await fetch('/api/cards');
+        const cards = await res.json() || [];
+        const list = document.getElementById('card-list');
+        list.innerHTML = "";
+        for (const card of cards) {
+          const li = document.createElement('li');
+          li.className = "card-item flex items-center gap-2";
+          li.dataset.uid = card.uid;
+          li.innerHTML = `
+            <span class="flex-1 font-mono text-xs text-cyan-200 truncate">${card.uid}</span>
+            <input class="input-cyber w-20 px-2 py-1 text-xs" value="${card.label || ''}" data-uid="${card.uid}" placeholder="label" />
+            <button class="btn-cyber px-2 py-1 text-xs"><i class="fas fa-copy"></i></button>
+          `;
+
+          li.querySelector('input').addEventListener('change', async (e) => {
+            await fetch('/api/label', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uid: card.uid, label: e.target.value })
+            });
+          });
+
+          li.querySelector('button').addEventListener('click', () => {
+            document.getElementById('uid').textContent = card.uid;
+            document.getElementById('card-text').value = card.text;
+            currentUID = card.uid;
+            currentText = card.text;
+            highlightCard(card.uid);
+          });
+
+          list.appendChild(li);
+        }
+      } catch (e) {
+        console.error('Fetch cards error:', e);
+      }
+    }
+
+    function highlightCard(uid) {
+      document.querySelectorAll('#card-list li').forEach(li => {
+        if (li.dataset.uid === uid) {
+          li.classList.add('active');
+        } else {
+          li.classList.remove('active');
+        }
+      });
+    }
+
+    // Write mode toggle
+    document.getElementById('write-btn').addEventListener('click', () => {
+      document.getElementById('write-panel').classList.toggle('hidden');
+      document.getElementById('write-input').value = currentText;
+      document.getElementById('write-input').focus();
+    });
+
+    document.getElementById('write-confirm').addEventListener('click', async () => {
+      const text = document.getElementById('write-input').value;
+      if (text.trim()) {
+        await writeCard(text);
+      } else {
+        alert("Enter text to write");
+      }
+    });
+
+    // Read button
+    document.getElementById('read-btn').addEventListener('click', readCard);
+
+    // Update check
+    document.getElementById('check-update').addEventListener('click', async () => {
+      const url = `https://api.github.com/repos/${repo}/releases/latest`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          alert("Failed to check for update. Ensure repo is public.");
+          return;
+        }
+        const data = await res.json();
+        const latest = data.tag_name.replace(/^v/, '');
+        const panel = document.getElementById('update-panel');
+        const status = document.getElementById('update-status');
+        const btn = document.getElementById('install-update');
+
+        if (latest !== version) {
+          panel.classList.remove('hidden');
+          status.textContent = `Update available: v${latest}`;
+          btn.style.display = "block";
+          btn.onclick = async () => {
+            status.textContent = "Downloading and installing...";
+            document.getElementById('progress-bar').classList.remove('hidden');
+            document.getElementById('progress-fill').style.width = "30%";
+
+            await fetch('/api/update', { method: 'POST' });
+
+            document.getElementById('progress-fill').style.width = "100%";
+            status.textContent = "Update installed! Restarting in 3s...";
+            setTimeout(() => location.reload(), 3000);
+          };
+        } else {
+          panel.classList.remove('hidden');
+          status.textContent = "You are up to date!";
+          btn.style.display = "none";
+        }
+      } catch (e) {
+        alert("Error: " + e.message);
+      }
+    });
+
+    // Initial load
+    fetchStatus();
+    fetchCards();
+  </script>
+</body>
+</html>

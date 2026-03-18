@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: arm-unknown-linux-gnueabihf
+          override: true
+
+      - name: Install cross
+        run: cargo install cross
+
+      - name: Build for Pi Zero (armv6l)
+        run: cross build --release --target=arm-unknown-linux-gnueabihf
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/arm-unknown-linux-gnueabihf/release/rfid-cyberdeck-rust
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

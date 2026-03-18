@@ -1,0 +1,15 @@
+/target
+**/*.rs.bk
+*.db
+*.sqlite
+*.sqlite3
+*.log
+.DS_Store
+.idea
+.vscode
+.env
+.env.local
+rfid-cyberdeck-rust
+rfid-cyberdeck-rust.exe
+cards.db
+Cargo.lock
