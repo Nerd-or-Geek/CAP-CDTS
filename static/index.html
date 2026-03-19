@@ -614,6 +614,24 @@
     let repo = "";
     let mode = "off";
 
+    function normalizeRepoSlug(raw) {
+      if (!raw) return '';
+      let s = String(raw).trim();
+
+      // Common forms:
+      // - owner/repo
+      // - https://github.com/owner/repo
+      // - git@github.com:owner/repo.git
+      s = s.replace(/^https?:\/\/github\.com\//i, '');
+      s = s.replace(/^git@github\.com:/i, '');
+      s = s.replace(/\.git$/i, '');
+      s = s.replace(/\/+$/g, '');
+
+      const parts = s.split('/').filter(Boolean);
+      if (parts.length >= 2) return parts[0] + '/' + parts[1];
+      return s;
+    }
+
     let cardsByUid = {};
     let autoReadTimer = null;
     let statusPollTimer = null;
@@ -742,7 +760,7 @@
         connOk();
 
         version = data.version || '0.0.0';
-        repo = data.repo || 'Nerd-or-Geek/CAP-CDTS';
+        repo = normalizeRepoSlug(data.repo || 'Nerd-or-Geek/CAP-CDTS') || 'Nerd-or-Geek/CAP-CDTS';
         document.getElementById('version').textContent = version;
 
         const githubUrl = `https://github.com/${repo}`;
@@ -928,7 +946,41 @@
     });
 
     document.getElementById('check-update')?.addEventListener('click', async () => {
+      const startUpdate = async () => {
+        const panel = document.getElementById('update-panel');
+        const status = document.getElementById('update-status');
+        const pb = document.getElementById('progress-bar');
+        const pf = document.getElementById('progress-fill');
+
+        panel.classList.remove('hidden');
+        status.textContent = 'Starting background update. App will restart when ready…';
+        pb.classList.remove('hidden');
+        pf.style.width = '0%';
+
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+          progress += Math.random() * 16;
+          if (progress > 90) progress = 90;
+          pf.style.width = progress + '%';
+        }, 900);
+
+        try {
+          await fetch('/api/update', { method: 'POST' });
+          setTimeout(() => {
+            clearInterval(progressInterval);
+            pf.style.width = '100%';
+            status.textContent = 'Update running in background. This page will reconnect after restart…';
+            toast('Update started', 'success', 2400);
+          }, 2500);
+        } catch (e) {
+          clearInterval(progressInterval);
+          status.textContent = 'Failed to start update: ' + e.message;
+          toast('Failed to start update', 'error', 3200);
+        }
+      };
+
       if (!repo) repo = 'Nerd-or-Geek/CAP-CDTS';
+      repo = normalizeRepoSlug(repo) || 'Nerd-or-Geek/CAP-CDTS';
       const url = `https://api.github.com/repos/${repo}/releases/latest`;
       const panel = document.getElementById('update-panel');
       const status = document.getElementById('update-status');
@@ -937,12 +989,39 @@
       panel.classList.remove('hidden');
       status.textContent = 'Checking…';
       btn.style.display = 'inline-flex';
+      btn.innerHTML = '<i class="fa-solid fa-hammer"></i> Build from source';
+      btn.onclick = startUpdate;
 
       try {
-        const res = await fetch(url);
-        if (!res.ok) {
-          status.textContent = 'Failed to check for update. Ensure the repo is public.';
+        const res = await fetch(url, {
+          headers: { 'Accept': 'application/vnd.github+json' }
+        });
+
+        if (res.status === 404) {
+          // GitHub returns 404 when there are no releases.
+          const repoRes = await fetch(`https://api.github.com/repos/${repo}`, {
+            headers: { 'Accept': 'application/vnd.github+json' }
+          });
+          if (repoRes.ok) {
+            status.textContent = 'No GitHub Releases found for this repo yet. Push a tag like v0.1.0 and publish a Release (or run the included GitHub Actions workflow) to enable release-based update checks. You can still build/update from source.';
+            btn.style.display = 'inline-flex';
+            btn.innerHTML = '<i class="fa-solid fa-hammer"></i> Build from source';
+            btn.onclick = startUpdate;
+            toast('No releases published yet', 'warning', 3200);
+            return;
+          }
+
+          status.textContent = `Repo not found or not accessible: ${repo}`;
           btn.style.display = 'none';
+          toast('Repo not accessible', 'error', 3200);
+          return;
+        }
+
+        if (!res.ok) {
+          status.textContent = `Update check failed (HTTP ${res.status}). You can still build/update from source.`;
+          btn.style.display = 'inline-flex';
+          btn.innerHTML = '<i class="fa-solid fa-hammer"></i> Build from source';
+          btn.onclick = startUpdate;
           toast('Update check failed', 'error', 3200);
           return;
         }
@@ -952,37 +1031,18 @@
         if (latest && latest !== version) {
           status.textContent = `Update available: v${latest}`;
           btn.style.display = 'inline-flex';
-          btn.onclick = async () => {
-            status.textContent = 'Starting background update. App will restart when ready…';
-            const pb = document.getElementById('progress-bar');
-            const pf = document.getElementById('progress-fill');
-            pb.classList.remove('hidden');
-            pf.style.width = '0%';
-
-            let progress = 0;
-            const progressInterval = setInterval(() => {
-              progress += Math.random() * 16;
-              if (progress > 90) progress = 90;
-              pf.style.width = progress + '%';
-            }, 900);
-
-            await fetch('/api/update', { method: 'POST' });
-
-            setTimeout(() => {
-              clearInterval(progressInterval);
-              pf.style.width = '100%';
-              status.textContent = 'Update running in background. This page will reconnect after restart…';
-              toast('Update started', 'success', 2400);
-            }, 2500);
-          };
+          btn.innerHTML = '<i class="fa-solid fa-download"></i> Install now';
+          btn.onclick = startUpdate;
         } else {
           status.textContent = 'You are up to date.';
           btn.style.display = 'none';
           toast('Already up to date', 'info', 2000);
         }
       } catch (e) {
-        status.textContent = 'Error: ' + e.message;
-        btn.style.display = 'none';
+        status.textContent = 'Update check error: ' + e.message + '. You can still build/update from source.';
+        btn.style.display = 'inline-flex';
+        btn.innerHTML = '<i class="fa-solid fa-hammer"></i> Build from source';
+        btn.onclick = startUpdate;
         toast('Update check error: ' + e.message, 'error', 3500);
       }
     });
