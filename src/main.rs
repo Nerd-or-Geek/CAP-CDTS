@@ -6,7 +6,7 @@ use axum::{
     Router,
 };
 use parking_lot::{Mutex, RwLock};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -32,14 +32,157 @@ const INDEX_HTML: &str = include_str!("../static/index.html");
 
 const BIN_NAME: &str = env!("CARGO_PKG_NAME");
 
-// Mode switch wiring (BCM GPIO numbers):
-// - GPIO27 (Pin 13) pulled to GND => READ mode
-// - GPIO22 (Pin 15) pulled to GND => WRITE mode
+// Default mode switch wiring (BCM GPIO numbers):
+// - read pin pulled to GND => READ mode
+// - write pin pulled to GND => WRITE mode
 // - neither pulled to GND => OFF
-#[cfg(target_os = "linux")]
-const MODE_READ_GPIO: u8 = 27;
-#[cfg(target_os = "linux")]
-const MODE_WRITE_GPIO: u8 = 22;
+const DEFAULT_MODE_READ_GPIO: u8 = 27;
+const DEFAULT_MODE_WRITE_GPIO: u8 = 22;
+
+const BCM_PIN_MIN: u8 = 2;
+const BCM_PIN_MAX: u8 = 27;
+
+const SETTING_GPIO_MODE_SWITCH_ENABLED: &str = "gpio.mode_switch_enabled";
+const SETTING_GPIO_MODE_READ_PIN: &str = "gpio.mode_read_gpio";
+const SETTING_GPIO_MODE_WRITE_PIN: &str = "gpio.mode_write_gpio";
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct GpioConfig {
+    /// If true (Linux/RPi), mode is controlled by a physical SPDT switch.
+    /// If false, the app defaults to WRITE mode.
+    enable_mode_switch: bool,
+
+    /// BCM pin pulled to GND for READ mode.
+    mode_read_gpio: u8,
+
+    /// BCM pin pulled to GND for WRITE mode.
+    mode_write_gpio: u8,
+}
+
+impl GpioConfig {
+    fn defaults() -> Self {
+        Self {
+            enable_mode_switch: cfg!(target_os = "linux"),
+            mode_read_gpio: DEFAULT_MODE_READ_GPIO,
+            mode_write_gpio: DEFAULT_MODE_WRITE_GPIO,
+        }
+    }
+}
+
+fn validate_gpio_config(cfg: &GpioConfig) -> Result<(), String> {
+    if !(BCM_PIN_MIN..=BCM_PIN_MAX).contains(&cfg.mode_read_gpio) {
+        return Err(format!(
+            "mode_read_gpio must be between {BCM_PIN_MIN} and {BCM_PIN_MAX}"
+        ));
+    }
+    if !(BCM_PIN_MIN..=BCM_PIN_MAX).contains(&cfg.mode_write_gpio) {
+        return Err(format!(
+            "mode_write_gpio must be between {BCM_PIN_MIN} and {BCM_PIN_MAX}"
+        ));
+    }
+    if cfg.mode_read_gpio == cfg.mode_write_gpio {
+        return Err("mode_read_gpio and mode_write_gpio must be different".to_string());
+    }
+    Ok(())
+}
+
+fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)\
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+fn load_or_init_gpio_config(conn: &Connection) -> GpioConfig {
+    let defaults = GpioConfig::defaults();
+
+    let enabled = get_setting(conn, SETTING_GPIO_MODE_SWITCH_ENABLED)
+        .ok()
+        .flatten()
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(defaults.enable_mode_switch);
+
+    let read_pin = get_setting(conn, SETTING_GPIO_MODE_READ_PIN)
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse::<u8>().ok())
+        .unwrap_or(defaults.mode_read_gpio);
+
+    let write_pin = get_setting(conn, SETTING_GPIO_MODE_WRITE_PIN)
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse::<u8>().ok())
+        .unwrap_or(defaults.mode_write_gpio);
+
+    let mut cfg = GpioConfig {
+        enable_mode_switch: enabled,
+        mode_read_gpio: read_pin,
+        mode_write_gpio: write_pin,
+    };
+
+    // If stored settings are invalid, fall back to defaults and persist them.
+    if let Err(e) = validate_gpio_config(&cfg) {
+        warn!("Invalid stored GPIO config, resetting to defaults: {e}");
+        cfg = defaults;
+    }
+
+    // Ensure settings exist in DB (without overwriting valid stored values).
+    let _ = set_setting(
+        conn,
+        SETTING_GPIO_MODE_SWITCH_ENABLED,
+        if cfg.enable_mode_switch { "true" } else { "false" },
+    );
+    let _ = set_setting(
+        conn,
+        SETTING_GPIO_MODE_READ_PIN,
+        &cfg.mode_read_gpio.to_string(),
+    );
+    let _ = set_setting(
+        conn,
+        SETTING_GPIO_MODE_WRITE_PIN,
+        &cfg.mode_write_gpio.to_string(),
+    );
+
+    cfg
+}
+
+fn save_gpio_config(conn: &Connection, cfg: &GpioConfig) -> Result<(), String> {
+    validate_gpio_config(cfg)?;
+
+    set_setting(
+        conn,
+        SETTING_GPIO_MODE_SWITCH_ENABLED,
+        if cfg.enable_mode_switch { "true" } else { "false" },
+    )
+    .map_err(|e| format!("Failed to save setting {SETTING_GPIO_MODE_SWITCH_ENABLED}: {e}"))?;
+
+    set_setting(
+        conn,
+        SETTING_GPIO_MODE_READ_PIN,
+        &cfg.mode_read_gpio.to_string(),
+    )
+    .map_err(|e| format!("Failed to save setting {SETTING_GPIO_MODE_READ_PIN}: {e}"))?;
+
+    set_setting(
+        conn,
+        SETTING_GPIO_MODE_WRITE_PIN,
+        &cfg.mode_write_gpio.to_string(),
+    )
+    .map_err(|e| format!("Failed to save setting {SETTING_GPIO_MODE_WRITE_PIN}: {e}"))?;
+
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -57,6 +200,7 @@ struct AppState {
     version: String,
     repo: String,
     mode: Arc<RwLock<DeviceMode>>,
+    gpio_config: Arc<RwLock<GpioConfig>>,
 }
 
 impl AppState {
@@ -67,30 +211,45 @@ impl AppState {
     fn set_mode(&self, mode: DeviceMode) {
         *self.mode.write() = mode;
     }
+
+    fn gpio_config(&self) -> GpioConfig {
+        *self.gpio_config.read()
+    }
+
+    fn set_gpio_config(&self, cfg: GpioConfig) {
+        *self.gpio_config.write() = cfg;
+    }
 }
 
 #[cfg(target_os = "linux")]
 struct GpioModeSwitch {
+    read_gpio: u8,
+    write_gpio: u8,
     read_pin: rppal::gpio::InputPin,
     write_pin: rppal::gpio::InputPin,
 }
 
 #[cfg(target_os = "linux")]
 impl GpioModeSwitch {
-    fn new() -> Result<Self, String> {
+    fn new(read_gpio: u8, write_gpio: u8) -> Result<Self, String> {
         let gpio = Gpio::new().map_err(|e| format!("Failed to access GPIO: {e}"))?;
 
         let read_pin = gpio
-            .get(MODE_READ_GPIO)
-            .map_err(|e| format!("Failed to access GPIO{MODE_READ_GPIO}: {e}"))?
+            .get(read_gpio)
+            .map_err(|e| format!("Failed to access GPIO{read_gpio}: {e}"))?
             .into_input_pullup();
 
         let write_pin = gpio
-            .get(MODE_WRITE_GPIO)
-            .map_err(|e| format!("Failed to access GPIO{MODE_WRITE_GPIO}: {e}"))?
+            .get(write_gpio)
+            .map_err(|e| format!("Failed to access GPIO{write_gpio}: {e}"))?
             .into_input_pullup();
 
-        Ok(Self { read_pin, write_pin })
+        Ok(Self {
+            read_gpio,
+            write_gpio,
+            read_pin,
+            write_pin,
+        })
     }
 
     fn sample_mode(&self) -> DeviceMode {
@@ -111,34 +270,76 @@ fn spawn_mode_switch_monitor(state: AppState) {
     thread::spawn(move || {
         #[cfg(target_os = "linux")]
         {
-            let mode_switch = match GpioModeSwitch::new() {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!("GPIO mode switch disabled: {e}");
-                    state.set_mode(DeviceMode::Off);
-                    return;
-                }
-            };
-
             // Basic debounce: require a stable reading for MODE_DEBOUNCE_MS before committing.
             const MODE_DEBOUNCE_MS: u64 = 75;
             const POLL_MS: u64 = 20;
 
-            let mut last_raw = mode_switch.sample_mode();
-            let mut last_stable = last_raw;
+            let mut last_cfg: Option<GpioConfig> = None;
+            let mut mode_switch: Option<GpioModeSwitch> = None;
+
+            let mut last_raw = DeviceMode::Off;
+            let mut last_stable = DeviceMode::Off;
             let mut last_change = Instant::now();
 
-            state.set_mode(last_stable);
-            info!("Initial mode: {:?}", last_stable);
-
             loop {
-                let raw = mode_switch.sample_mode();
+                let cfg = state.gpio_config();
+
+                // Hot-reload pins if configuration changed.
+                if last_cfg != Some(cfg) {
+                    last_cfg = Some(cfg);
+                    mode_switch = None;
+
+                    info!(
+                        "GPIO config updated: enabled={} read_gpio={} write_gpio={}",
+                        cfg.enable_mode_switch, cfg.mode_read_gpio, cfg.mode_write_gpio
+                    );
+                }
+
+                if !cfg.enable_mode_switch {
+                    // With no physical switch, keep the UI usable.
+                    if state.mode() != DeviceMode::Write {
+                        state.set_mode(DeviceMode::Write);
+                        info!("Mode switch disabled; forcing WRITE mode");
+                    }
+                    thread::sleep(Duration::from_millis(250));
+                    continue;
+                }
+
+                if mode_switch.is_none() {
+                    match GpioModeSwitch::new(cfg.mode_read_gpio, cfg.mode_write_gpio) {
+                        Ok(s) => {
+                            info!(
+                                "GPIO mode switch active on BCM{} (READ) and BCM{} (WRITE)",
+                                s.read_gpio, s.write_gpio
+                            );
+
+                            // Reset debounce state on re-init.
+                            last_raw = s.sample_mode();
+                            last_stable = last_raw;
+                            last_change = Instant::now();
+                            state.set_mode(last_stable);
+                            info!("Initial mode: {:?}", last_stable);
+
+                            mode_switch = Some(s);
+                        }
+                        Err(e) => {
+                            warn!("GPIO mode switch unavailable: {e}");
+                            state.set_mode(DeviceMode::Off);
+                            thread::sleep(Duration::from_millis(750));
+                            continue;
+                        }
+                    }
+                }
+
+                let raw = mode_switch.as_ref().unwrap().sample_mode();
                 if raw != last_raw {
                     last_raw = raw;
                     last_change = Instant::now();
                 }
 
-                if raw != last_stable && last_change.elapsed() >= Duration::from_millis(MODE_DEBOUNCE_MS) {
+                if raw != last_stable
+                    && last_change.elapsed() >= Duration::from_millis(MODE_DEBOUNCE_MS)
+                {
                     let prev = state.mode();
                     last_stable = raw;
                     state.set_mode(last_stable);
@@ -288,6 +489,11 @@ struct LabelRequest {
     label: String,
 }
 
+#[derive(Serialize)]
+struct ErrorResponse {
+    error: String,
+}
+
 // --- API Handlers ---
 async fn index() -> impl IntoResponse {
     Html(INDEX_HTML)
@@ -421,6 +627,37 @@ async fn api_status(State(state): State<AppState>) -> impl IntoResponse {
         mode: state.mode(),
         status: "ok".to_string(),
     })
+}
+
+async fn api_gpio_config_get(State(state): State<AppState>) -> impl IntoResponse {
+    Json(state.gpio_config())
+}
+
+async fn api_gpio_config_set(
+    State(state): State<AppState>,
+    Json(payload): Json<GpioConfig>,
+) -> impl IntoResponse {
+    if let Err(e) = validate_gpio_config(&payload) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse { error: e }),
+        )
+            .into_response();
+    }
+
+    {
+        let db = state.db.lock();
+        if let Err(e) = save_gpio_config(&db, &payload) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse { error: e }),
+            )
+                .into_response();
+        }
+    }
+
+    state.set_gpio_config(payload);
+    (StatusCode::OK, Json(payload)).into_response()
 }
 
 async fn api_update(State(state): State<AppState>) -> impl IntoResponse {
@@ -786,6 +1023,13 @@ fn init_db() -> Connection {
         )",
         [],
     );
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
+        [],
+    );
     conn
 }
 
@@ -800,12 +1044,16 @@ async fn main() {
         .unwrap_or("Nerd-or-Geek/CAP-CDTS")
         .to_string();
 
+    let db_conn = init_db();
+    let gpio_cfg = load_or_init_gpio_config(&db_conn);
+
     let state = AppState {
-        db: Arc::new(Mutex::new(init_db())),
+        db: Arc::new(Mutex::new(db_conn)),
         rfid: Arc::new(Mutex::new(RfidReader::new())),
         version,
         repo,
         mode: Arc::new(RwLock::new(DeviceMode::Off)),
+        gpio_config: Arc::new(RwLock::new(gpio_cfg)),
     };
 
     // Background hardware tasks (mode switch + continuous read).
@@ -819,6 +1067,10 @@ async fn main() {
         .route("/api/cards", get(api_cards))
         .route("/api/label", post(api_label))
         .route("/api/status", get(api_status))
+        .route(
+            "/api/gpio/config",
+            get(api_gpio_config_get).post(api_gpio_config_set),
+        )
         .route("/api/update", post(api_update))
         .with_state(state)
         .layer(CorsLayer::permissive());

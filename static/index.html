@@ -2,268 +2,777 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>RFID Cyberdeck</title>
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CAP-CDTS</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
   <style>
-    * {
-      font-family: 'Roboto Mono', 'Orbitron', monospace;
+    :root {
+      --bg:       #050a0e;
+      --bg2:      #0b1520;
+      --bg3:      #0f1e2e;
+      --bg4:      #162840;
+      --border:   #1a3a5c;
+      --accent:   #00d4ff;
+      --accent2:  #ff6b35;
+      --accent3:  #39ff14;
+      --text:     #c8dce8;
+      --text-dim: #4a7090;
+      --danger:   #ff3366;
+      --gold:     #ffd700;
+
+      --glow:       0 0 20px rgba(0,212,255,0.3);
+      --glow-green: 0 0 20px rgba(57,255,20,0.4);
+      --glow-red:   0 0 20px rgba(255,51,102,0.4);
+      --grid-line:  rgba(0,212,255,0.03);
+      --scanline:   rgba(0,0,0,0.03);
     }
-    h1, h2, h3, .heading {
+
+    :root.light {
+      --bg:       #f5f7fa;
+      --bg2:      #ffffff;
+      --bg3:      #e8ecf1;
+      --bg4:      #dde3eb;
+      --border:   #c5cdd8;
+      --accent:   #0077b6;
+      --accent2:  #d45500;
+      --accent3:  #1a7f37;
+      --text:     #1f2328;
+      --text-dim: #656d76;
+      --danger:   #cf222e;
+      --gold:     #9a6700;
+
+      --glow:       0 0 12px rgba(0,119,182,0.25);
+      --glow-green: 0 0 12px rgba(26,127,55,0.3);
+      --glow-red:   0 0 12px rgba(207,34,46,0.3);
+      --grid-line:  rgba(0,119,182,0.04);
+      --scanline:   rgba(0,0,0,0.015);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, var(--scanline) 2px, var(--scanline) 4px);
+      pointer-events: none; z-index: 100;
+    }
+    code { font-family: 'Share Tech Mono', monospace; font-size: 0.95em; color: var(--accent); }
+
+    .grid-bg {
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(var(--grid-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none; z-index: 0;
+    }
+    .app {
+      position: relative; z-index: 1;
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 16px 20px 54px;
+    }
+
+    /* Header */
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 0 18px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .header-left { display: flex; flex-direction: column; gap: 4px; }
+    .header-center {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    @media (max-width: 860px) {
+      .header-center { flex: none; width: 100%; order: 3; justify-content: center; }
+    }
+    .logo {
+      font-family: 'Orbitron', monospace;
+      font-weight: 900;
+      font-size: 1.38rem;
+      letter-spacing: 0.08em;
+      background: linear-gradient(135deg, var(--accent), var(--accent3));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .logo span {
+      font-size: 0.78rem;
+      opacity: 0.6;
+      font-weight: 400;
+    }
+    .subtle {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+    }
+    .device-name {
       font-family: 'Orbitron', monospace;
       font-weight: 700;
+      font-size: 1.1rem;
+      letter-spacing: 0.08em;
+      background: linear-gradient(135deg, var(--accent2), var(--gold));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      white-space: nowrap;
     }
-    body {
-      background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
-      color: #e0e0ff;
-      min-height: 100vh;
+    .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+
+    .status-pill {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.63rem;
+      color: var(--text-dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      user-select: none;
     }
-    .neon {
-      text-shadow: 0 0 8px #0ff, 0 0 16px #0ff, 0 0 32px #0ff;
-      color: #00fff7;
+    .status-pill .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: all 0.2s;
     }
-    .neon-purple {
-      text-shadow: 0 0 8px #a0f, 0 0 16px #a0f, 0 0 32px #a0f;
-      color: #a259ff;
+    .status-pill .dot.ok { background: var(--accent3); box-shadow: var(--glow-green); }
+    .status-pill .dot.err { background: var(--danger); box-shadow: var(--glow-red); }
+    .status-pill .dot.active { background: var(--accent); box-shadow: var(--glow); animation: pulse 0.6s ease-in-out infinite alternate; }
+    @keyframes pulse { from { opacity:0.5; } to { opacity:1; } }
+
+    /* Nav */
+    .nav {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      background: var(--bg2);
+      padding: 5px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      flex-wrap: wrap;
     }
-    .btn-cyber {
-      background: linear-gradient(90deg, #00fff7 0%, #a259ff 100%);
-      color: #18181b;
-      font-weight: 700;
+    .nav-btn {
+      flex: 1;
+      min-width: 70px;
+      padding: 9px 8px;
       border: none;
-      border-radius: 0.5rem;
-      box-shadow: 0 0 12px #0ff, 0 0 20px #a0f;
-      transition: all 0.2s;
+      background: transparent;
+      color: var(--text-dim);
+      font-family: 'Orbitron', monospace;
+      font-size: 0.56rem;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      border-radius: 7px;
       cursor: pointer;
-    }
-    .btn-cyber:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 0 16px #0ff, 0 0 24px #a0f;
-    }
-    .btn-cyber:active {
-      transform: scale(0.97);
-    }
-    .panel {
-      background: rgba(15, 32, 39, 0.8);
-      border: 2px solid #a259ff;
-      border-radius: 1rem;
-      box-shadow: 0 0 20px #a259ff66, inset 0 0 10px #a259ff11;
-      padding: 1.5rem;
-      backdrop-filter: blur(10px);
-    }
-    .input-cyber {
-      background: rgba(0, 0, 0, 0.6);
-      border: 1px solid #00fff7;
-      color: #00fff7;
-      font-family: 'Roboto Mono', monospace;
-      padding: 0.5rem;
-      border-radius: 0.25rem;
-      transition: all 0.3s;
-    }
-    .input-cyber:focus {
-      outline: none;
-      box-shadow: 0 0 8px #0ff, inset 0 0 4px #0ff22;
-      border-color: #a259ff;
-      color: #a259ff;
-    }
-    .scrollbar::-webkit-scrollbar {
-      width: 8px;
-      background: #18181b;
-    }
-    .scrollbar::-webkit-scrollbar-thumb {
-      background: linear-gradient(180deg, #a259ff, #00fff7);
-      border-radius: 4px;
-    }
-    .card-item {
-      background: rgba(0, 127, 255, 0.05);
-      border-left: 3px solid #00fff7;
-      padding: 0.75rem;
-      border-radius: 0.25rem;
       transition: all 0.2s;
+      white-space: nowrap;
+      text-decoration: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
     }
-    .card-item:hover {
-      background: rgba(162, 89, 255, 0.1);
-      border-left-color: #a259ff;
-      box-shadow: 0 0 8px #a259ff44;
+    .nav-btn:hover { color: var(--text); background: var(--bg3); }
+    .nav-btn.active {
+      background: linear-gradient(135deg, rgba(0,212,255,0.2), rgba(57,255,20,0.1));
+      color: var(--accent);
+      border: 1px solid rgba(0,212,255,0.3);
+      box-shadow: 0 0 10px rgba(0,212,255,0.1);
     }
-    .card-item.active {
-      background: rgba(162, 89, 255, 0.2);
-      border-left-color: #a259ff;
-      box-shadow: 0 0 12px #a259ff77;
+    .nav-icon { display: block; font-size: 0.9rem; margin-bottom: 1px; }
+
+    /* Panel */
+    .panel {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 22px;
+      margin-bottom: 14px;
+      position: relative;
+      overflow: hidden;
+      animation: fadeIn 0.2s ease;
     }
-    .scanline {
-      position: fixed;
-      top: 0;
-      left: 0;
+    .panel::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.35;
+    }
+    .panel-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-title::before {
+      content: '';
+      width: 3px;
+      height: 14px;
+      background: var(--accent);
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    @keyframes fadeIn { from { opacity:0; transform: translateY(-4px);} to { opacity:1; transform: translateY(0);} }
+
+    .hint-text {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+      line-height: 1.55;
+      margin-bottom: 10px;
+    }
+
+    /* Inputs */
+    .input-field {
       width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 11px 14px;
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.93rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .input-field:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 8px rgba(0,212,255,0.15);
+    }
+    select.input-field { cursor: pointer; }
+    select.input-field option { background: var(--bg2); }
+
+    /* Buttons */
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 7px;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.61rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      user-select: none;
+    }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-primary {
+      background: linear-gradient(135deg, rgba(0,212,255,0.25), rgba(0,212,255,0.1));
+      color: var(--accent);
+      border: 1px solid rgba(0,212,255,0.4);
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: linear-gradient(135deg, rgba(0,212,255,0.4), rgba(0,212,255,0.2));
+      box-shadow: 0 0 12px rgba(0,212,255,0.2);
+    }
+    .btn-success {
+      background: linear-gradient(135deg, rgba(57,255,20,0.2), rgba(57,255,20,0.05));
+      color: var(--accent3);
+      border: 1px solid rgba(57,255,20,0.3);
+    }
+    .btn-success:hover:not(:disabled) {
+      background: linear-gradient(135deg, rgba(57,255,20,0.35), rgba(57,255,20,0.15));
+      box-shadow: 0 0 12px rgba(57,255,20,0.2);
+    }
+    .btn-orange {
+      background: linear-gradient(135deg, rgba(255,107,53,0.25), rgba(255,107,53,0.1));
+      color: var(--accent2);
+      border: 1px solid rgba(255,107,53,0.35);
+    }
+    .btn-orange:hover:not(:disabled) {
+      background: linear-gradient(135deg, rgba(255,107,53,0.4), rgba(255,107,53,0.2));
+      box-shadow: 0 0 12px rgba(255,107,53,0.2);
+    }
+    .btn-danger {
+      background: linear-gradient(135deg, rgba(255,51,102,0.2), rgba(255,51,102,0.05));
+      color: var(--danger);
+      border: 1px solid rgba(255,51,102,0.3);
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: linear-gradient(135deg, rgba(255,51,102,0.35), rgba(255,51,102,0.15));
+    }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover:not(:disabled) { color: var(--text); border-color: var(--text-dim); }
+    .btn-xs { padding: 5px 10px; font-size: 0.55rem; border-radius: 6px; }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .hidden { display: none !important; }
+
+    /* Segmented control */
+    .segmented {
+      display: flex;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .segmented-btn {
+      flex: 1;
+      padding: 8px 10px;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      font-family: 'Orbitron', monospace;
+      font-size: 0.58rem;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.15s;
+      border-right: 1px solid var(--border);
+    }
+    .segmented-btn:last-child { border-right: none; }
+    .segmented-btn.active { background: rgba(0,212,255,0.15); color: var(--accent); }
+
+    /* Current card */
+    .uid-display {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 2.1rem;
+      letter-spacing: 0.12em;
+      color: var(--accent3);
+      margin-bottom: 6px;
+      word-break: break-all;
+    }
+    .label-display {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.9rem;
+      color: var(--text-dim);
+      min-height: 18px;
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+    @media (max-width: 860px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+
+    /* Card library */
+    .card-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .card-item {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-left: 3px solid rgba(0,212,255,0.35);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      transition: all 0.15s;
+      overflow: hidden;
+    }
+    .card-item:hover { border-left-color: var(--accent); background: rgba(0,212,255,0.06); }
+    .card-item.active { border-left-color: var(--accent2); box-shadow: 0 0 12px rgba(255,107,53,0.12); }
+    .card-uid { font-family: 'Share Tech Mono', monospace; font-size: 0.72rem; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .card-label-input { width: 140px; min-width: 120px; }
+    @media (max-width: 520px) {
+      .card-label-input { width: 100%; min-width: 0; }
+      .card-item { flex-wrap: wrap; }
+    }
+
+    /* Progress */
+    .progress {
+      width: 100%;
+      height: 7px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      margin: 10px 0 8px;
+    }
+    .progress-fill {
       height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      transition: width 0.35s ease;
+    }
+
+    /* Footer */
+    .footer {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 0.72rem;
+      font-family: 'Share Tech Mono', monospace;
+    }
+    .footer a { color: var(--accent); text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+    .sep-dot { opacity: 0.6; }
+
+    /* Toast */
+    #toast-container {
+      position: fixed;
+      bottom: 22px;
+      right: 22px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
       pointer-events: none;
-      background: repeating-linear-gradient(
-        0deg,
-        rgba(0, 255, 247, 0.03),
-        rgba(0, 255, 247, 0.03) 1px,
-        transparent 1px,
-        transparent 2px
-      );
-      z-index: -1;
     }
-    .glitch {
-      animation: glitch 0.3s;
+    .toast {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 11px 17px;
+      font-family: 'Orbitron', monospace;
+      font-size: 0.63rem;
+      letter-spacing: 0.08em;
+      color: var(--text);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      animation: toastIn 0.22s ease;
+      max-width: 330px;
     }
-    @keyframes glitch {
-      0% { text-shadow: -2px 0 #a259ff, 2px 0 #00fff7; }
-      50% { text-shadow: 2px 0 #a259ff, -2px 0 #00fff7; }
-      100% { text-shadow: -2px 0 #00fff7, 2px 0 #a259ff; }
-    }
+    .toast.success { border-color: rgba(57,255,20,0.4); color: var(--accent3); }
+    .toast.error { border-color: rgba(255,51,102,0.4); color: var(--danger); }
+    .toast.info { border-color: rgba(0,212,255,0.4); color: var(--accent); }
+    .toast.warning { border-color: rgba(255,107,53,0.4); color: var(--accent2); }
+    @keyframes toastIn { from { opacity: 0; transform: translateX(18px);} to { opacity: 1; transform: translateX(0);} }
+
+    /* Sections */
+    .section { display: block; }
   </style>
 </head>
 <body>
-  <div class="scanline"></div>
-  <div class="flex flex-col items-center justify-center min-h-screen py-8">
-    <div class="w-full max-w-4xl mx-auto px-4 panel">
-      <!-- Header -->
-      <div class="mb-6">
-        <h1 class="text-5xl neon text-center mb-2 heading">RFID CYBERDECK</h1>
-        <div class="flex flex-wrap justify-between items-center gap-3">
-          <span class="neon-purple text-lg"><i class="fas fa-microchip"></i> v<span id="version">?.?.?</span></span>
-          <span class="text-xs text-gray-400 heading">MODE: <span id="mode" class="neon">OFF</span></span>
-          <button id="check-update" class="btn-cyber px-4 py-2 text-sm flex items-center gap-2">
-            <i class="fas fa-sync-alt"></i> Check Update
-          </button>
+  <div class="grid-bg"></div>
+  <div id="toast-container"></div>
+
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">&#9672; CAP-CDTS <span>v<span id="version">?.?.?</span></span></div>
+        <div class="subtle">RFID Cyberdeck Tag Tool</div>
+      </div>
+      <div class="header-center">
+        <div class="device-name">RFID CYBERDECK</div>
+      </div>
+      <div class="header-right">
+        <div class="status-pill"><div class="dot" id="conn-dot"></div>SERVER</div>
+        <div class="status-pill"><div class="dot" id="mode-dot"></div>MODE: <span id="mode">OFF</span></div>
+        <button class="btn btn-ghost btn-xs" id="theme-btn" type="button" title="Toggle light/dark theme">&#9788; LIGHT</button>
+        <button class="btn btn-primary" id="check-update" type="button"><i class="fa-solid fa-rotate"></i> Update</button>
+      </div>
+    </header>
+
+    <nav class="nav">
+      <button class="nav-btn active" type="button" data-section="tags"><span class="nav-icon"><i class="fa-solid fa-id-card"></i></span>TAGS</button>
+      <button class="nav-btn" type="button" data-section="gpio"><span class="nav-icon"><i class="fa-solid fa-microchip"></i></span>GPIO</button>
+      <a class="nav-btn" id="github-link" href="#" target="_blank" rel="noopener"><span class="nav-icon"><i class="fa-brands fa-github"></i></span>GITHUB</a>
+    </nav>
+
+    <div id="section-tags" class="section">
+      <div class="panel">
+        <div class="panel-title">CURRENT CARD</div>
+        <div class="uid-display" id="uid">────</div>
+        <div class="label-display" id="label-display"></div>
+        <textarea id="card-text" class="input-field" rows="3" readonly></textarea>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">ACTIONS</div>
+        <p class="hint-text">Flip the physical switch to <b>READ</b> or <b>WRITE</b>. In READ mode the device continuously scans and this page updates automatically.</p>
+
+        <div class="btn-row" style="margin-bottom: 10px;">
+          <button id="read-btn" class="btn btn-success" type="button"><i class="fa-solid fa-rss"></i> Read</button>
+          <button id="write-btn" class="btn btn-orange" type="button"><i class="fa-solid fa-pen"></i> Write</button>
+        </div>
+
+        <div id="write-panel" class="hidden" style="margin-top: 10px;">
+          <div style="margin-bottom: 10px;">
+            <div class="panel-title" style="margin-bottom: 10px;">WRITE TEXT</div>
+            <input id="write-input" class="input-field" placeholder="Type here..." autocomplete="off" />
+          </div>
+          <div class="btn-row">
+            <button id="write-confirm" class="btn btn-primary" type="button"><i class="fa-solid fa-check"></i> Write to card</button>
+          </div>
+        </div>
+
+        <div id="update-panel" class="hidden" style="margin-top: 12px;">
+          <div class="panel-title" style="margin-bottom: 10px;">UPDATER</div>
+          <div class="hint-text" id="update-status">Checking...</div>
+          <div id="progress-bar" class="progress hidden"><div id="progress-fill" class="progress-fill"></div></div>
+          <div class="btn-row">
+            <button id="install-update" class="btn btn-primary" type="button"><i class="fa-solid fa-download"></i> Install now</button>
+            <button id="dismiss-update" class="btn btn-ghost" type="button">Hide</button>
+          </div>
         </div>
       </div>
 
-      <!-- Main Content -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <!-- Left Panel: Control -->
-        <div class="lg:col-span-2">
-          <!-- Current Card Display -->
-          <div class="mb-6 p-4 bg-black bg-opacity-40 rounded border border-cyan-500">
-            <div class="text-lg neon-purple mb-2 heading"><i class="fas fa-id-card"></i> Current Card</div>
-            <div class="font-mono text-3xl neon mb-2" id="uid">────</div>
-            <div class="text-sm text-gray-400" id="label-display"></div>
-            <textarea id="card-text" class="w-full bg-black bg-opacity-60 text-cyan-200 font-mono rounded p-2 mt-2 border border-cyan-500 focus:border-purple-500 focus:shadow-lg" rows="3" readonly></textarea>
-          </div>
-
-          <!-- Action Buttons -->
-          <div class="grid grid-cols-2 gap-4 mb-6">
-            <button id="read-btn" class="btn-cyber px-6 py-4 text-lg flex items-center justify-center gap-2">
-              <i class="fas fa-rss"></i> READ
-            </button>
-            <button id="write-btn" class="btn-cyber px-6 py-4 text-lg flex items-center justify-center gap-2">
-              <i class="fas fa-pen"></i> WRITE
-            </button>
-          </div>
-
-          <!-- Write Panel (Hidden) -->
-          <div id="write-panel" class="hidden mb-6 p-4 bg-black bg-opacity-40 rounded border border-purple-500">
-            <label class="text-sm neon-purple mb-2 block heading">Enter text to write:</label>
-            <input id="write-input" class="input-cyber w-full mb-3" placeholder="Type here..." />
-            <button id="write-confirm" class="btn-cyber w-full px-4 py-3 flex items-center justify-center gap-2">
-              <i class="fas fa-check"></i> Write to Card
-            </button>
-          </div>
-
-          <!-- Update Panel (Hidden) -->
-          <div id="update-panel" class="hidden mb-6 p-4 bg-black bg-opacity-40 rounded border border-cyan-500">
-            <div class="text-cyan-300 mb-2 text-sm" id="update-status">Checking...</div>
-            <div id="progress-bar" class="w-full bg-black rounded h-2 mb-2 hidden">
-              <div id="progress-fill" class="bg-gradient-to-r from-cyan-500 to-purple-500 h-full rounded" style="width: 0%"></div>
-            </div>
-            <button id="install-update" class="btn-cyber w-full px-4 py-3 flex items-center justify-center gap-2">
-              <i class="fas fa-download"></i> Install Now
-            </button>
-          </div>
-        </div>
-
-        <!-- Right Panel: Card Library -->
-        <div class="panel scrollbar overflow-y-auto max-h-96">
-          <div class="text-lg neon mb-4 heading"><i class="fas fa-list"></i> Tag Library</div>
-          <ul id="card-list" class="space-y-2"></ul>
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <div class="text-center text-xs text-gray-500 border-t border-purple-500 pt-4">
-        &copy; 2026 RFID Cyberdeck |
-        <a id="github-link" href="#" class="neon-purple hover:underline">GitHub</a>
+      <div class="panel">
+        <div class="panel-title">TAG LIBRARY</div>
+        <p class="hint-text">Tags you have read/written are stored locally in <code>cards.db</code>. Edit labels inline.</p>
+        <ul id="card-list" class="card-list"></ul>
       </div>
     </div>
+
+    <div id="section-gpio" class="section hidden">
+      <div class="panel">
+        <div class="panel-title">GPIO MODE SWITCH SETUP</div>
+        <p class="hint-text">Configure which <b>BCM GPIO</b> pins your SPDT mode switch uses for <b>READ</b> and <b>WRITE</b>. The pins are treated as <b>active-low</b> (internal pull-up; switch shorts to GND).</p>
+
+        <div style="margin-bottom: 14px;">
+          <div style="font-family:'Orbitron',monospace;font-size:0.6rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px;">Physical switch</div>
+          <div class="segmented" style="max-width: 360px;">
+            <button class="segmented-btn" id="gpio-switch-off" type="button">Off</button>
+            <button class="segmented-btn" id="gpio-switch-on" type="button">On</button>
+          </div>
+          <div class="hint-text" style="margin-top: 8px;">If OFF, the app forces <b>WRITE</b> mode (useful for dev systems without GPIO). If ON and pigpio/rppal access fails, the app will fall back to <b>OFF</b> mode.</div>
+        </div>
+
+        <div class="two-col">
+          <div>
+            <div style="font-family:'Orbitron',monospace;font-size:0.6rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">Read mode pin</div>
+            <select id="gpio-read-pin" class="input-field"></select>
+            <div class="hint-text" style="margin-top: 8px;">Switch throw that grounds this pin &rarr; READ mode.</div>
+          </div>
+          <div>
+            <div style="font-family:'Orbitron',monospace;font-size:0.6rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">Write mode pin</div>
+            <select id="gpio-write-pin" class="input-field"></select>
+            <div class="hint-text" style="margin-top: 8px;">Switch throw that grounds this pin &rarr; WRITE mode.</div>
+          </div>
+        </div>
+
+        <div class="btn-row" style="margin-top: 14px;">
+          <button id="gpio-save" class="btn btn-success" type="button"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+          <button id="gpio-reload" class="btn btn-ghost" type="button"><i class="fa-solid fa-rotate"></i> Reload</button>
+        </div>
+        <div id="gpio-msg" class="hint-text" style="margin-top: 10px;"></div>
+
+        <div class="hint-text" style="margin-top: 12px;">
+          Wiring reminder: <b>center/common &rarr; GND</b>, one throw &rarr; READ pin, the other throw &rarr; WRITE pin. Center position (neither grounded) = OFF.
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer">
+      <span>&copy; 2026 CAP-CDTS</span>
+      <span class="sep-dot">•</span>
+      <span>Repo: <a id="repo-link" href="#" target="_blank" rel="noopener">Nerd-or-Geek/CAP-CDTS</a></span>
+    </footer>
   </div>
 
   <script>
+    'use strict';
+
     let currentUID = "";
-    let currentLabel = "";
     let currentText = "";
+    let currentLabel = "";
     let version = "0.0.0";
     let repo = "";
     let mode = "off";
 
+    let cardsByUid = {};
     let autoReadTimer = null;
     let statusPollTimer = null;
 
+    // ── Toast ──────────────────────────────────────
+    function toast(msg, type = 'info', duration = 2800) {
+      const c = document.getElementById('toast-container');
+      if (!c) return;
+      const t = document.createElement('div');
+      t.className = 'toast ' + type;
+      t.textContent = msg;
+      c.appendChild(t);
+      setTimeout(() => {
+        t.style.transition = 'opacity 0.3s';
+        t.style.opacity = '0';
+        setTimeout(() => t.remove(), 350);
+      }, duration);
+    }
+
+    // ── Connection + mode indicators ─────────────────
+    let _connOk = null;
+    function connOk() {
+      if (_connOk === true) return;
+      _connOk = true;
+      const dot = document.getElementById('conn-dot');
+      if (dot) dot.className = 'dot ok';
+    }
+    function connLost() {
+      if (_connOk === false) return;
+      _connOk = false;
+      const dot = document.getElementById('conn-dot');
+      if (dot) dot.className = 'dot err';
+    }
+    function setModeDot(nextMode) {
+      const dot = document.getElementById('mode-dot');
+      if (!dot) return;
+      if (nextMode === 'read') dot.className = 'dot active';
+      else if (nextMode === 'write') dot.className = 'dot ok';
+      else dot.className = 'dot err';
+    }
+
+    // ── Navigation ──────────────────────────────────
+    function setSection(section) {
+      const tags = document.getElementById('section-tags');
+      const gpio = document.getElementById('section-gpio');
+      if (tags) tags.classList.toggle('hidden', section !== 'tags');
+      if (gpio) gpio.classList.toggle('hidden', section !== 'gpio');
+
+      document.querySelectorAll('.nav-btn[data-section]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.section === section);
+      });
+    }
+    document.querySelectorAll('.nav-btn[data-section]').forEach(btn => {
+      btn.addEventListener('click', () => setSection(btn.dataset.section));
+    });
+
+    // ── Theme toggle ────────────────────────────────
+    function applyThemeFromStorage() {
+      const saved = localStorage.getItem('cap-cdts-theme');
+      const btn = document.getElementById('theme-btn');
+      if (saved === 'light') {
+        document.documentElement.classList.add('light');
+        if (btn) btn.innerHTML = '&#9790; DARK';
+      } else {
+        document.documentElement.classList.remove('light');
+        if (btn) btn.innerHTML = '&#9788; LIGHT';
+      }
+    }
+    function toggleTheme() {
+      const root = document.documentElement;
+      const btn = document.getElementById('theme-btn');
+      if (root.classList.contains('light')) {
+        root.classList.remove('light');
+        localStorage.setItem('cap-cdts-theme', 'dark');
+        if (btn) btn.innerHTML = '&#9788; LIGHT';
+      } else {
+        root.classList.add('light');
+        localStorage.setItem('cap-cdts-theme', 'light');
+        if (btn) btn.innerHTML = '&#9790; DARK';
+      }
+    }
+    document.getElementById('theme-btn')?.addEventListener('click', toggleTheme);
+    applyThemeFromStorage();
+
+    // ── UI helpers ──────────────────────────────────
     function setButtonEnabled(id, enabled) {
       const el = document.getElementById(id);
       if (!el) return;
       el.disabled = !enabled;
-      el.classList.toggle('opacity-40', !enabled);
-      el.classList.toggle('cursor-not-allowed', !enabled);
     }
 
     function applyMode(nextMode) {
-      // Stop any previous auto-read loop
       if (autoReadTimer) {
         clearInterval(autoReadTimer);
         autoReadTimer = null;
       }
 
-      // Hide write UI whenever mode changes
-      document.getElementById('write-panel').classList.add('hidden');
+      document.getElementById('write-panel')?.classList.add('hidden');
 
       if (nextMode === 'read') {
-        // Continuous reading mode: backend reads constantly; UI polls for last read.
         setButtonEnabled('read-btn', false);
         setButtonEnabled('write-btn', false);
         setButtonEnabled('write-confirm', false);
+        document.getElementById('label-display').textContent = 'READ mode: scanning continuously…';
 
-        // Quick initial refresh then poll.
         readCard(true);
         autoReadTimer = setInterval(() => readCard(true), 600);
       } else if (nextMode === 'write') {
         setButtonEnabled('read-btn', false);
         setButtonEnabled('write-btn', true);
         setButtonEnabled('write-confirm', true);
-        document.getElementById('label-display').textContent = "WRITE mode: enter text, then tap WRITE";
+        document.getElementById('label-display').textContent = 'WRITE mode: enter text, then press WRITE';
       } else {
-        // OFF
         setButtonEnabled('read-btn', false);
         setButtonEnabled('write-btn', false);
         setButtonEnabled('write-confirm', false);
-        document.getElementById('label-display').textContent = "OFF: flip the hardware switch to READ or WRITE";
+        document.getElementById('label-display').textContent = 'OFF: flip the hardware switch to READ or WRITE';
       }
     }
 
     async function fetchStatus() {
       try {
         const res = await fetch('/api/status');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        version = data.version || "0.0.0";
-        repo = data.repo || "Nerd-or-Geek/CAP-CDTS";
-        document.getElementById('version').textContent = version;
-        document.getElementById('github-link').href = `https://github.com/${repo}`;
+        connOk();
 
-        const nextMode = (data.mode || "off").toString().toLowerCase();
+        version = data.version || '0.0.0';
+        repo = data.repo || 'Nerd-or-Geek/CAP-CDTS';
+        document.getElementById('version').textContent = version;
+
+        const githubUrl = `https://github.com/${repo}`;
+        const gl = document.getElementById('github-link');
+        if (gl) gl.href = githubUrl;
+        const rl = document.getElementById('repo-link');
+        if (rl) { rl.href = githubUrl; rl.textContent = repo; }
+
+        const nextMode = (data.mode || 'off').toString().toLowerCase();
+        setModeDot(nextMode);
         if (nextMode !== mode) {
           mode = nextMode;
           document.getElementById('mode').textContent = mode.toUpperCase();
           applyMode(mode);
         }
       } catch (e) {
-        console.error('Status fetch error:', e);
+        connLost();
       }
+    }
+
+    function updateCurrentCardDisplay() {
+      document.getElementById('uid').textContent = currentUID || '────';
+      document.getElementById('card-text').value = currentText || '';
+      document.getElementById('label-display').textContent = currentLabel || document.getElementById('label-display').textContent;
+    }
+
+    function highlightCard(uid) {
+      document.querySelectorAll('#card-list li').forEach(li => {
+        li.classList.toggle('active', li.dataset.uid === uid);
+      });
     }
 
     async function readCard(silent = false) {
@@ -275,24 +784,21 @@
           currentUID = data.uid;
           currentText = data.text;
 
+          const cached = cardsByUid[currentUID];
+          currentLabel = cached ? (cached.label || '') : '';
+
           if (changed) {
-            document.getElementById('uid').textContent = currentUID || "────";
-            document.getElementById('card-text').value = currentText || "";
-            document.getElementById('label-display').textContent = currentLabel || "";
+            updateCurrentCardDisplay();
             highlightCard(currentUID);
             await fetchCards();
           }
         } else {
-          // In READ mode we poll constantly; do not spam alerts.
-          document.getElementById('label-display').textContent = data.text || "Waiting...";
-          if (!silent) {
-            alert("Read failed: " + data.text);
-          }
+          // In READ mode we poll constantly; don't spam.
+          if (!silent) toast('Read failed: ' + (data.text || 'unknown error'), 'error', 3500);
+          if (data.text) document.getElementById('label-display').textContent = data.text;
         }
       } catch (e) {
-        if (!silent) {
-          alert("Error: " + e.message);
-        }
+        if (!silent) toast('Read error: ' + e.message, 'error', 3500);
       }
     }
 
@@ -307,16 +813,20 @@
         if (data.success) {
           currentUID = data.uid;
           currentText = data.text;
-          document.getElementById('uid').textContent = currentUID;
-          document.getElementById('card-text').value = currentText;
+
+          const cached = cardsByUid[currentUID];
+          currentLabel = cached ? (cached.label || '') : '';
+
+          updateCurrentCardDisplay();
           highlightCard(currentUID);
           await fetchCards();
-          document.getElementById('write-panel').classList.add('hidden');
+          document.getElementById('write-panel')?.classList.add('hidden');
+          toast('Wrote tag ' + currentUID, 'success');
         } else {
-          alert("Write failed: " + data.text);
+          toast('Write failed: ' + (data.text || 'unknown error'), 'error', 3500);
         }
       } catch (e) {
-        alert("Error: " + e.message);
+        toast('Write error: ' + e.message, 'error', 3500);
       }
     }
 
@@ -324,126 +834,260 @@
       try {
         const res = await fetch('/api/cards');
         const cards = await res.json() || [];
+
+        cardsByUid = {};
+        for (const c of cards) cardsByUid[c.uid] = c;
+
         const list = document.getElementById('card-list');
-        list.innerHTML = "";
+        list.innerHTML = '';
+
         for (const card of cards) {
           const li = document.createElement('li');
-          li.className = "card-item flex items-center gap-2";
+          li.className = 'card-item';
           li.dataset.uid = card.uid;
-          li.innerHTML = `
-            <span class="flex-1 font-mono text-xs text-cyan-200 truncate">${card.uid}</span>
-            <input class="input-cyber w-20 px-2 py-1 text-xs" value="${card.label || ''}" data-uid="${card.uid}" placeholder="label" />
-            <button class="btn-cyber px-2 py-1 text-xs"><i class="fas fa-copy"></i></button>
-          `;
 
-          li.querySelector('input').addEventListener('change', async (e) => {
-            await fetch('/api/label', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ uid: card.uid, label: e.target.value })
-            });
+          const uidSpan = document.createElement('span');
+          uidSpan.className = 'card-uid';
+          uidSpan.textContent = card.uid;
+
+          const labelInput = document.createElement('input');
+          labelInput.className = 'input-field card-label-input';
+          labelInput.value = card.label || '';
+          labelInput.placeholder = 'label';
+
+          const openBtn = document.createElement('button');
+          openBtn.className = 'btn btn-ghost btn-xs';
+          openBtn.type = 'button';
+          openBtn.innerHTML = '<i class="fa-solid fa-eye"></i>';
+          openBtn.title = 'Show card';
+
+          labelInput.addEventListener('change', async (e) => {
+            try {
+              await fetch('/api/label', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid: card.uid, label: e.target.value })
+              });
+              cardsByUid[card.uid] = Object.assign({}, card, { label: e.target.value });
+              if (card.uid === currentUID) {
+                currentLabel = e.target.value;
+                document.getElementById('label-display').textContent = currentLabel;
+              }
+            } catch {
+              toast('Failed to save label', 'error', 2500);
+            }
           });
 
-          li.querySelector('button').addEventListener('click', () => {
-            document.getElementById('uid').textContent = card.uid;
-            document.getElementById('card-text').value = card.text;
+          openBtn.addEventListener('click', () => {
             currentUID = card.uid;
             currentText = card.text;
+            currentLabel = card.label || '';
+            updateCurrentCardDisplay();
             highlightCard(card.uid);
           });
 
+          li.appendChild(uidSpan);
+          li.appendChild(labelInput);
+          li.appendChild(openBtn);
+
           list.appendChild(li);
         }
+
+        if (currentUID) highlightCard(currentUID);
       } catch (e) {
-        console.error('Fetch cards error:', e);
+        toast('Fetch cards error: ' + e.message, 'error', 3500);
       }
     }
 
-    function highlightCard(uid) {
-      document.querySelectorAll('#card-list li').forEach(li => {
-        if (li.dataset.uid === uid) {
-          li.classList.add('active');
-        } else {
-          li.classList.remove('active');
-        }
-      });
-    }
-
-    // Write mode toggle
-    document.getElementById('write-btn').addEventListener('click', () => {
-      if (mode !== 'write') return;
-      document.getElementById('write-panel').classList.toggle('hidden');
+    // ── Read/Write UI bindings ──────────────────────
+    document.getElementById('write-btn')?.addEventListener('click', () => {
+      if (mode !== 'write') { toast('Switch to WRITE mode first', 'warning', 2500); return; }
+      const panel = document.getElementById('write-panel');
+      panel.classList.toggle('hidden');
       document.getElementById('write-input').value = currentText;
       document.getElementById('write-input').focus();
     });
 
-    document.getElementById('write-confirm').addEventListener('click', async () => {
+    document.getElementById('write-confirm')?.addEventListener('click', async () => {
       const text = document.getElementById('write-input').value;
       if (text.trim()) {
         await writeCard(text);
       } else {
-        alert("Enter text to write");
+        toast('Enter text to write', 'warning', 2200);
       }
     });
 
-    // Read button (disabled in READ mode because we auto-poll)
-    document.getElementById('read-btn').addEventListener('click', () => readCard(false));
+    document.getElementById('read-btn')?.addEventListener('click', () => {
+      // Read button is typically disabled; keep for manual test.
+      readCard(false);
+    });
 
-    // Update check
-    document.getElementById('check-update').addEventListener('click', async () => {
+    // ── Updater UI ─────────────────────────────────
+    document.getElementById('dismiss-update')?.addEventListener('click', () => {
+      document.getElementById('update-panel')?.classList.add('hidden');
+    });
+
+    document.getElementById('check-update')?.addEventListener('click', async () => {
+      if (!repo) repo = 'Nerd-or-Geek/CAP-CDTS';
       const url = `https://api.github.com/repos/${repo}/releases/latest`;
+      const panel = document.getElementById('update-panel');
+      const status = document.getElementById('update-status');
+      const btn = document.getElementById('install-update');
+
+      panel.classList.remove('hidden');
+      status.textContent = 'Checking…';
+      btn.style.display = 'inline-flex';
+
       try {
         const res = await fetch(url);
         if (!res.ok) {
-          alert("Failed to check for update. Ensure repo is public.");
+          status.textContent = 'Failed to check for update. Ensure the repo is public.';
+          btn.style.display = 'none';
+          toast('Update check failed', 'error', 3200);
           return;
         }
-        const data = await res.json();
-        const latest = data.tag_name.replace(/^v/, '');
-        const panel = document.getElementById('update-panel');
-        const status = document.getElementById('update-status');
-        const btn = document.getElementById('install-update');
 
-        if (latest !== version) {
-          panel.classList.remove('hidden');
+        const data = await res.json();
+        const latest = (data.tag_name || '').replace(/^v/, '');
+        if (latest && latest !== version) {
           status.textContent = `Update available: v${latest}`;
-          btn.style.display = "block";
+          btn.style.display = 'inline-flex';
           btn.onclick = async () => {
-            status.textContent = "Starting background update. App will continue running and restart once complete...";
-            document.getElementById('progress-bar').classList.remove('hidden');
-            
-            // Simulate progress (actual build happens in background)
+            status.textContent = 'Starting background update. App will restart when ready…';
+            const pb = document.getElementById('progress-bar');
+            const pf = document.getElementById('progress-fill');
+            pb.classList.remove('hidden');
+            pf.style.width = '0%';
+
             let progress = 0;
             const progressInterval = setInterval(() => {
-              progress += Math.random() * 15;
+              progress += Math.random() * 16;
               if (progress > 90) progress = 90;
-              document.getElementById('progress-fill').style.width = progress + "%";
-            }, 1000);
+              pf.style.width = progress + '%';
+            }, 900);
 
             await fetch('/api/update', { method: 'POST' });
 
-            // Continue showing progress for a bit
             setTimeout(() => {
               clearInterval(progressInterval);
-              document.getElementById('progress-fill').style.width = "100%";
-              status.textContent = "Update installing in background. App will restart automatically when ready...";
-            }, 3000);
+              pf.style.width = '100%';
+              status.textContent = 'Update running in background. This page will reconnect after restart…';
+              toast('Update started', 'success', 2400);
+            }, 2500);
           };
         } else {
-          panel.classList.remove('hidden');
-          status.textContent = "You are up to date!";
-          btn.style.display = "none";
+          status.textContent = 'You are up to date.';
+          btn.style.display = 'none';
+          toast('Already up to date', 'info', 2000);
         }
       } catch (e) {
-        alert("Error: " + e.message);
+        status.textContent = 'Error: ' + e.message;
+        btn.style.display = 'none';
+        toast('Update check error: ' + e.message, 'error', 3500);
       }
     });
 
-    // Initial load
+    // ── GPIO config UI ─────────────────────────────
+    const BCM_TO_PHYS = {
+      2: 3, 3: 5, 4: 7, 5: 29, 6: 31, 7: 26, 8: 24, 9: 21, 10: 19, 11: 23,
+      12: 32, 13: 33, 14: 8, 15: 10, 16: 36, 17: 11, 18: 12, 19: 35,
+      20: 38, 21: 40, 22: 15, 23: 16, 24: 18, 25: 22, 26: 37, 27: 13
+    };
+
+    function populateBcmSelect(el) {
+      if (!el) return;
+      el.innerHTML = '';
+      for (let bcm = 2; bcm <= 27; bcm++) {
+        const opt = document.createElement('option');
+        const phys = BCM_TO_PHYS[bcm];
+        opt.value = String(bcm);
+        opt.textContent = phys ? `BCM ${bcm} (Pin ${phys})` : `BCM ${bcm}`;
+        el.appendChild(opt);
+      }
+    }
+
+    function setGpioSwitchEnabledUi(enabled) {
+      document.getElementById('gpio-switch-on')?.classList.toggle('active', !!enabled);
+      document.getElementById('gpio-switch-off')?.classList.toggle('active', !enabled);
+    }
+    function getGpioSwitchEnabledUi() {
+      return document.getElementById('gpio-switch-on')?.classList.contains('active');
+    }
+
+    async function loadGpioConfig() {
+      const msg = document.getElementById('gpio-msg');
+      if (msg) msg.textContent = '';
+      try {
+        const res = await fetch('/api/gpio/config');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const cfg = await res.json();
+
+        setGpioSwitchEnabledUi(!!cfg.enable_mode_switch);
+        const r = document.getElementById('gpio-read-pin');
+        const w = document.getElementById('gpio-write-pin');
+        if (r) r.value = String(cfg.mode_read_gpio);
+        if (w) w.value = String(cfg.mode_write_gpio);
+
+        toast('GPIO config loaded', 'info', 1800);
+      } catch (e) {
+        if (msg) msg.textContent = 'Failed to load GPIO config: ' + e.message;
+        toast('Failed to load GPIO config', 'error', 2600);
+      }
+    }
+
+    async function saveGpioConfig() {
+      const msg = document.getElementById('gpio-msg');
+      if (msg) msg.textContent = '';
+
+      const enable = !!getGpioSwitchEnabledUi();
+      const readPin = parseInt(document.getElementById('gpio-read-pin')?.value || '0', 10);
+      const writePin = parseInt(document.getElementById('gpio-write-pin')?.value || '0', 10);
+
+      const payload = {
+        enable_mode_switch: enable,
+        mode_read_gpio: readPin,
+        mode_write_gpio: writePin
+      };
+
+      try {
+        const res = await fetch('/api/gpio/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          const err = data && data.error ? data.error : ('HTTP ' + res.status);
+          if (msg) msg.textContent = err;
+          toast('GPIO save failed: ' + err, 'error', 3500);
+          return;
+        }
+
+        if (msg) msg.textContent = 'Saved. (Changes apply immediately.)';
+        toast('GPIO settings saved', 'success', 2200);
+
+        // Refresh status quickly so the UI reflects the new mode.
+        setTimeout(fetchStatus, 250);
+      } catch (e) {
+        if (msg) msg.textContent = 'Save error: ' + e.message;
+        toast('GPIO save error: ' + e.message, 'error', 3500);
+      }
+    }
+
+    document.getElementById('gpio-switch-off')?.addEventListener('click', () => setGpioSwitchEnabledUi(false));
+    document.getElementById('gpio-switch-on')?.addEventListener('click', () => setGpioSwitchEnabledUi(true));
+    document.getElementById('gpio-reload')?.addEventListener('click', loadGpioConfig);
+    document.getElementById('gpio-save')?.addEventListener('click', saveGpioConfig);
+
+    populateBcmSelect(document.getElementById('gpio-read-pin'));
+    populateBcmSelect(document.getElementById('gpio-write-pin'));
+
+    // ── Initial load ───────────────────────────────
+    setSection('tags');
     fetchStatus();
     fetchCards();
-
-    // Poll status so the UI follows the physical mode switch.
+    loadGpioConfig();
     statusPollTimer = setInterval(fetchStatus, 1000);
   </script>
 </body>
