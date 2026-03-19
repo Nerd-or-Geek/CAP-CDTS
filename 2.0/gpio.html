@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAP Reporting System — GPIO Configuration</title>
+    <link rel="stylesheet" href="cap-ui.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="app-header">
+    <div class="title">
+        <h1>Civil Air Patrol Reporting System</h1>
+        <div class="subtitle">GPIO configuration</div>
+    </div>
+    <div class="status" aria-label="Live status">
+        <div class="pill" title="WebSocket connection status">
+            <span id="wsDot" class="dot neutral" aria-hidden="true"></span>
+            <span>WS</span>
+            <span id="wsText">Disconnected</span>
+        </div>
+        <div class="pill" title="Authentication stage">
+            <span>Auth</span>
+            <span id="authText">—</span>
+        </div>
+        <div class="pill" title="Current role">
+            <span>Role</span>
+            <span id="roleText">—</span>
+        </div>
+        <div class="pill" title="Last update timestamp">
+            <span>Updated</span>
+            <span id="updatedText">—</span>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+    <aside class="sidebar">
+        <h2>Navigation</h2>
+        <nav class="nav" aria-label="Primary">
+            <a href="index.html">Dashboard</a>
+            <a href="people.html">People</a>
+            <a href="reports.html">Reports</a>
+            <a href="create_report.html">Create Report</a>
+            <a href="gpio.html">GPIO</a>
+        </nav>
+        <div class="note">
+            Use <strong>BCM GPIO numbers</strong> (not physical header pins).
+            This config is saved to the backend JSON store.
+        </div>
+    </aside>
+
+    <main class="main" id="main">
+        <section class="card" aria-label="GPIO configuration">
+            <h2>GPIO configuration</h2>
+            <p class="muted">Select which BCM GPIO each device is connected to. Leave fields as “Not set” if unused.</p>
+
+            <div class="actions">
+                <button class="btn secondary" id="reloadBtn" type="button">Reload</button>
+                <button class="btn" id="saveBtn" type="button">Save</button>
+                <button class="btn ghost" id="clearBtn" type="button">Clear</button>
+            </div>
+            <div id="msg" class="alert neutral" style="display:none"></div>
+
+            <form id="gpioForm">
+                <div class="grid cols-2" style="align-items:start">
+                    <div class="card" style="margin-bottom:0">
+                        <h2 style="font-size:16px; margin-bottom:8px">RFID (MFRC522)</h2>
+
+                        <label for="rfid_spi_bus">SPI bus</label>
+                        <select id="rfid_spi_bus">
+                            <option value="" selected>Not set</option>
+                            <option value="0">spi0 (recommended)</option>
+                            <option value="1">spi1</option>
+                        </select>
+
+                        <label for="rfid_spi_cs">SPI chip select</label>
+                        <select id="rfid_spi_cs">
+                            <option value="" selected>Not set</option>
+                            <option value="0">CE0 (GPIO 8)</option>
+                            <option value="1">CE1 (GPIO 7)</option>
+                        </select>
+
+                        <label for="rfid_rst_gpio">Reset GPIO</label>
+                        <select id="rfid_rst_gpio" data-pin-select></select>
+                        <div class="help">If your reader’s RST is tied high, leave this unset.</div>
+                    </div>
+
+                    <div class="card" style="margin-bottom:0">
+                        <h2 style="font-size:16px; margin-bottom:8px">Rotary encoder</h2>
+
+                        <label for="rotary_a">Channel A</label>
+                        <select id="rotary_a" data-pin-select></select>
+
+                        <label for="rotary_b">Channel B</label>
+                        <select id="rotary_b" data-pin-select></select>
+
+                        <label for="rotary_btn">Rotary push button</label>
+                        <select id="rotary_btn" data-pin-select></select>
+                    </div>
+                </div>
+
+                <div class="grid cols-2" style="align-items:start">
+                    <div class="card" style="margin-bottom:0">
+                        <h2 style="font-size:16px; margin-bottom:8px">SPDT switches</h2>
+                        <p class="muted" style="margin-top:0">Each switch uses two GPIO inputs (A/B). Common should be tied to GND or 3.3V depending on wiring.</p>
+
+                        <div class="grid cols-2">
+                            <div>
+                                <label for="spdt1_a">Switch 1 — A</label>
+                                <select id="spdt1_a" data-pin-select></select>
+                            </div>
+                            <div>
+                                <label for="spdt1_b">Switch 1 — B</label>
+                                <select id="spdt1_b" data-pin-select></select>
+                            </div>
+                        </div>
+
+                        <div class="grid cols-2">
+                            <div>
+                                <label for="spdt2_a">Switch 2 — A</label>
+                                <select id="spdt2_a" data-pin-select></select>
+                            </div>
+                            <div>
+                                <label for="spdt2_b">Switch 2 — B</label>
+                                <select id="spdt2_b" data-pin-select></select>
+                            </div>
+                        </div>
+
+                        <div class="grid cols-2">
+                            <div>
+                                <label for="spdt3_a">Switch 3 — A</label>
+                                <select id="spdt3_a" data-pin-select></select>
+                            </div>
+                            <div>
+                                <label for="spdt3_b">Switch 3 — B</label>
+                                <select id="spdt3_b" data-pin-select></select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card" style="margin-bottom:0">
+                        <h2 style="font-size:16px; margin-bottom:8px">Buttons</h2>
+
+                        <label for="cap_touch">Capacitive touch button</label>
+                        <select id="cap_touch" data-pin-select></select>
+                        <div class="help">If using a digital touch sensor module, this is its OUT pin.</div>
+
+                        <label for="push_btn">Push button (confirm)</label>
+                        <select id="push_btn" data-pin-select></select>
+                        <div class="help">Separate from the rotary push button.</div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom:0">
+                    <h2 style="font-size:16px; margin-bottom:8px">Preview</h2>
+                    <p class="muted" style="margin-top:0">This is what will be saved to <code>/api/gpio/config</code>.</p>
+                    <pre id="preview" style="white-space:pre-wrap; margin:0; background:rgba(0,0,0,0.04); padding:12px; border-radius:10px; border:1px solid rgba(0,0,0,0.08);"></pre>
+                </div>
+            </form>
+        </section>
+    </main>
+</div>
+
+<script src="cap-ui.js"></script>
+<script>
+    (function () {
+        "use strict";
+
+        function showMsg(text, kind) {
+            var el = document.getElementById("msg");
+            if (!el) return;
+            el.style.display = "block";
+            el.classList.remove("ok", "bad", "neutral");
+            el.classList.add(kind || "neutral");
+            el.textContent = text;
+        }
+
+        function hideMsg() {
+            var el = document.getElementById("msg");
+            if (!el) return;
+            el.style.display = "none";
+        }
+
+        function opt(sel, value, label, selected) {
+            var o = document.createElement("option");
+            o.value = value;
+            o.textContent = label;
+            if (selected) o.selected = true;
+            sel.appendChild(o);
+        }
+
+        function populatePinSelect(sel) {
+            sel.innerHTML = "";
+            opt(sel, "", "Not set", true);
+
+            // BCM pins 0-27 are the usual set used on the 40-pin header.
+            // 0/1 are often reserved for ID EEPROM; include them anyway.
+            for (var p = 0; p <= 27; p++) {
+                var label = "GPIO " + p;
+                if (p === 0 || p === 1) label += " (reserved on many Pi setups)";
+                opt(sel, String(p), label, false);
+            }
+        }
+
+        function readU8(id) {
+            var v = (document.getElementById(id).value || "").trim();
+            if (!v) return null;
+            var n = parseInt(v, 10);
+            if (Number.isNaN(n)) return null;
+            return n;
+        }
+
+        function readCfg() {
+            return {
+                rfid_spi_bus: readU8("rfid_spi_bus"),
+                rfid_spi_cs: readU8("rfid_spi_cs"),
+                rfid_rst_gpio: readU8("rfid_rst_gpio"),
+
+                spdt1_a: readU8("spdt1_a"),
+                spdt1_b: readU8("spdt1_b"),
+                spdt2_a: readU8("spdt2_a"),
+                spdt2_b: readU8("spdt2_b"),
+                spdt3_a: readU8("spdt3_a"),
+                spdt3_b: readU8("spdt3_b"),
+
+                rotary_a: readU8("rotary_a"),
+                rotary_b: readU8("rotary_b"),
+                rotary_btn: readU8("rotary_btn"),
+
+                cap_touch: readU8("cap_touch"),
+                push_btn: readU8("push_btn"),
+            };
+        }
+
+        function writeSelect(id, val) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.value = (val === null || val === undefined) ? "" : String(val);
+        }
+
+        function applyCfg(cfg) {
+            cfg = cfg || {};
+            writeSelect("rfid_spi_bus", cfg.rfid_spi_bus);
+            writeSelect("rfid_spi_cs", cfg.rfid_spi_cs);
+            writeSelect("rfid_rst_gpio", cfg.rfid_rst_gpio);
+
+            writeSelect("spdt1_a", cfg.spdt1_a);
+            writeSelect("spdt1_b", cfg.spdt1_b);
+            writeSelect("spdt2_a", cfg.spdt2_a);
+            writeSelect("spdt2_b", cfg.spdt2_b);
+            writeSelect("spdt3_a", cfg.spdt3_a);
+            writeSelect("spdt3_b", cfg.spdt3_b);
+
+            writeSelect("rotary_a", cfg.rotary_a);
+            writeSelect("rotary_b", cfg.rotary_b);
+            writeSelect("rotary_btn", cfg.rotary_btn);
+
+            writeSelect("cap_touch", cfg.cap_touch);
+            writeSelect("push_btn", cfg.push_btn);
+
+            updatePreview();
+        }
+
+        function updatePreview() {
+            var pre = document.getElementById("preview");
+            if (!pre) return;
+            pre.textContent = JSON.stringify(readCfg(), null, 2);
+        }
+
+        async function reload() {
+            hideMsg();
+            updatePreview();
+
+            var resp = await CAPUI.apiGet("/api/gpio/config");
+            if (resp.ok && resp.data) {
+                applyCfg(resp.data);
+                showMsg("Loaded GPIO config from backend.", "ok");
+                return;
+            }
+
+            showMsg(
+                "Unable to load GPIO config from backend. (Status: " + resp.status + ")",
+                "bad"
+            );
+        }
+
+        async function save() {
+            hideMsg();
+            updatePreview();
+
+            var cfg = readCfg();
+            var resp = await CAPUI.apiPost("/api/gpio/config", cfg);
+            if (resp.ok) {
+                applyCfg(resp.data);
+                showMsg("Saved GPIO config.", "ok");
+                return;
+            }
+
+            var msg = "Save failed (status " + resp.status + ")";
+            try {
+                if (resp.data && resp.data.error) msg += ": " + resp.data.error;
+            } catch (_e) {}
+            showMsg(msg, "bad");
+        }
+
+        function clearAll() {
+            applyCfg({});
+            showMsg("Cleared form (not saved yet).", "neutral");
+        }
+
+        // Init
+        CAPUI.markActiveNav();
+        CAPUI.connectLiveState(function (state) {
+            CAPUI.applyLiveStateToCommonBadges(state);
+        });
+
+        document.querySelectorAll("select[data-pin-select]").forEach(function (sel) {
+            populatePinSelect(sel);
+            sel.addEventListener("change", updatePreview);
+        });
+        document.getElementById("rfid_spi_bus").addEventListener("change", updatePreview);
+        document.getElementById("rfid_spi_cs").addEventListener("change", updatePreview);
+
+        document.getElementById("reloadBtn").addEventListener("click", reload);
+        document.getElementById("saveBtn").addEventListener("click", save);
+        document.getElementById("clearBtn").addEventListener("click", clearAll);
+
+        updatePreview();
+        reload();
+    })();
+</script>
+
+</body>
+</html>

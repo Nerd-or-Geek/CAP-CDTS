@@ -1,34 +1,22 @@
 [package]
-name = "rfid-cyberdeck-rust"
+name = "cap-cdts-backend"
 version = "0.1.0"
 edition = "2021"
-authors = ["Your Name <you@example.com>"]
-description = "Beautiful cyberpunk RFID reader/writer for Raspberry Pi Zero + RC522, with HTML frontend, pure Rust backend, and one-click self-updater from GitHub releases."
-license = "MIT"
 
 [dependencies]
-axum = "0.7"
-tokio = { version = "1.37", features = ["macros", "rt-multi-thread", "signal", "net"] }
-serde = { version = "1.0", features = ["derive"] }
+anyhow = "1"
+argon2 = "0.5"
+axum = { version = "0.7", features = ["json", "ws"] }
+password-hash = "0.5"
+rand_core = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+time = { version = "0.3", features = ["formatting"] }
+tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread", "signal", "sync"] }
+tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
-parking_lot = "0.12"
-tower-http = { version = "0.5", features = ["cors"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-# GPIO input for the mode switch on Raspberry Pi
-rppal = "0.17"
-# Link against system SQLite on Linux (much faster to build on Pi than compiling bundled SQLite)
-rusqlite = { version = "0.31" }
-
-[target.'cfg(not(target_os = "linux"))'.dependencies]
-# Non-Linux dev builds are easiest with bundled SQLite (no system libs needed)
-rusqlite = { version = "0.31", features = ["bundled"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [profile.release]
-strip = true
-# Faster compiles on low-power devices (Pi Zero). Enable LTO later if you truly need it.
-lto = false
-codegen-units = 16
-opt-level = 2
-panic = "abort"
+lto = true
+codegen-units = 1

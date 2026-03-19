@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAP Reporting System — Dashboard</title>
+    <link rel="stylesheet" href="cap-ui.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="app-header">
+    <div class="title">
+        <h1>Civil Air Patrol Reporting System</h1>
+        <div class="subtitle">CAP-CDTS • UI Prototype 2.0</div>
+    </div>
+    <div class="status" aria-label="Live status">
+        <div class="pill" title="WebSocket connection status">
+            <span id="wsDot" class="dot neutral" aria-hidden="true"></span>
+            <span>WS</span>
+            <span id="wsText">Disconnected</span>
+        </div>
+        <div class="pill" title="Authentication stage">
+            <span>Auth</span>
+            <span id="authText">—</span>
+        </div>
+        <div class="pill" title="Current role">
+            <span>Role</span>
+            <span id="roleText">—</span>
+        </div>
+        <div class="pill" title="Last update timestamp">
+            <span>Updated</span>
+            <span id="updatedText">—</span>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+    <aside class="sidebar">
+        <h2>Navigation</h2>
+        <nav class="nav" aria-label="Primary">
+            <a href="index.html">Dashboard</a>
+            <a href="people.html">People</a>
+            <a href="reports.html">Reports</a>
+            <a href="create_report.html">Create Report</a>
+            <a href="gpio.html">GPIO</a>
+        </nav>
+        <div class="note">
+            These pages are static prototypes. If a backend is running on
+            <strong>localhost:8080</strong>, the UI will try to connect to <code>/ws</code> and
+            read/write <code>/api/*</code>.
+        </div>
+    </aside>
+
+    <main class="main" id="main">
+        <div class="grid cols-3" aria-label="Summary">
+            <section class="card" aria-label="People summary">
+                <div class="stat-label">People</div>
+                <div class="stat-value" id="peopleCount">—</div>
+                <div class="stat-sub">Users in system</div>
+            </section>
+            <section class="card" aria-label="Open reports summary">
+                <div class="stat-label">Open reports</div>
+                <div class="stat-value" id="openReportsCount">—</div>
+                <div class="stat-sub">Awaiting closure</div>
+            </section>
+            <section class="card" aria-label="Total reports summary">
+                <div class="stat-label">Total reports</div>
+                <div class="stat-value" id="totalReportsCount">—</div>
+                <div class="stat-sub">All-time</div>
+            </section>
+        </div>
+
+        <section class="card">
+            <h2>Quick actions</h2>
+            <p class="muted">Jump to the most common workflows.</p>
+            <div class="actions">
+                <a class="btn" href="create_report.html">Create report</a>
+                <a class="btn secondary" href="reports.html">View reports</a>
+                <a class="btn ghost" href="people.html">Manage people</a>
+            </div>
+        </section>
+
+        <section class="card" aria-label="Recent reports">
+            <h2>Recent reports</h2>
+            <p class="muted">Shows demo data unless the backend API is available.</p>
+            <table class="table" aria-label="Recent reports table">
+                <thead>
+                <tr>
+                    <th>Report #</th>
+                    <th>Opened by / Person</th>
+                    <th>Created</th>
+                    <th>Status</th>
+                </tr>
+                </thead>
+                <tbody id="recentReportsBody">
+                <tr>
+                    <td colspan="4" class="muted">Loading…</td>
+                </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="card" aria-label="Auth flow screens">
+            <h2>Authentication screens</h2>
+            <p class="muted">Kiosk-style pages for the on-device 3-step authentication flow.</p>
+            <div class="actions">
+                <a class="btn secondary" href="wake.html">Wake / Scan</a>
+                <a class="btn secondary" href="passcode.html">Passcode</a>
+                <a class="btn secondary" href="switches.html">Switches</a>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script src="cap-ui.js"></script>
+<script>
+    (function () {
+        "use strict";
+
+        function safeText(v) {
+            if (v === null || v === undefined) return "";
+            return String(v);
+        }
+
+        function reportNum(r) {
+            return r.num ?? r.report_num ?? r.reportNum ?? r.id ?? "—";
+        }
+
+        function reportWho(r) {
+            return r.person ?? r.opened_by ?? r.openedBy ?? r.username ?? "—";
+        }
+
+        function reportCreated(r) {
+            return r.created_at_utc ?? r.createdAtUtc ?? r.created_at ?? r.createdAt ?? "";
+        }
+
+        function isClosed(r) {
+            return Boolean(r.closed_at_utc ?? r.closedAtUtc ?? r.closed_at ?? r.closedAt);
+        }
+
+        function renderRecentReports(reports) {
+            var tbody = document.getElementById("recentReportsBody");
+            if (!tbody) return;
+
+            tbody.innerHTML = "";
+
+            if (!Array.isArray(reports) || reports.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="muted">No reports found.</td></tr>';
+                return;
+            }
+
+            reports.slice(0, 10).forEach(function (r) {
+                var tr = document.createElement("tr");
+
+                var tdNum = document.createElement("td");
+                tdNum.textContent = safeText(reportNum(r));
+                tr.appendChild(tdNum);
+
+                var tdWho = document.createElement("td");
+                tdWho.textContent = safeText(reportWho(r));
+                tr.appendChild(tdWho);
+
+                var tdCreated = document.createElement("td");
+                tdCreated.textContent = safeText(reportCreated(r));
+                tr.appendChild(tdCreated);
+
+                var tdStatus = document.createElement("td");
+                var span = document.createElement("span");
+                span.className = "badge " + (isClosed(r) ? "closed" : "open");
+                span.textContent = isClosed(r) ? "Closed" : "Open";
+                tdStatus.appendChild(span);
+                tr.appendChild(tdStatus);
+
+                tbody.appendChild(tr);
+            });
+        }
+
+        function setCounts(users, reports) {
+            var peopleCount = document.getElementById("peopleCount");
+            var openReportsCount = document.getElementById("openReportsCount");
+            var totalReportsCount = document.getElementById("totalReportsCount");
+            if (peopleCount) peopleCount.textContent = String(Array.isArray(users) ? users.length : 0);
+            if (totalReportsCount) totalReportsCount.textContent = String(Array.isArray(reports) ? reports.length : 0);
+
+            var open = 0;
+            if (Array.isArray(reports)) {
+                reports.forEach(function (r) {
+                    if (!isClosed(r)) open += 1;
+                });
+            }
+            if (openReportsCount) openReportsCount.textContent = String(open);
+        }
+
+        async function loadData() {
+            var users = CAPUI.demoUsers();
+            var reports = CAPUI.demoReports();
+
+            var reportsResp = await CAPUI.apiGet("/api/reports");
+            if (reportsResp.ok && Array.isArray(reportsResp.data)) {
+                reports = reportsResp.data;
+            }
+
+            var usersResp = await CAPUI.apiGet("/api/users");
+            if (usersResp.ok && Array.isArray(usersResp.data)) {
+                users = usersResp.data;
+            }
+
+            setCounts(users, reports);
+            renderRecentReports(reports);
+        }
+
+        CAPUI.markActiveNav();
+        CAPUI.connectLiveState(function (state) {
+            CAPUI.applyLiveStateToCommonBadges(state);
+        });
+
+        loadData();
+    })();
+</script>
+
+</body>
+</html>

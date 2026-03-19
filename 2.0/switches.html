@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>CAP-CDTS — Switch Pattern</title>
+	<link rel="stylesheet" href="cap-ui.css">
+</head>
+<body class="kiosk blue">
+
+<div class="kiosk-card" role="main" aria-label="Switch pattern authentication">
+	<h1>Switch authentication</h1>
+	<p>Set the 3 SPDT switches to the correct pattern, then press the confirm button.</p>
+
+	<div class="kiosk-row" aria-label="Stage">
+		<div class="pill">
+			<span>Stage</span>
+			<span id="stageText">1</span>
+			<span>of 3</span>
+		</div>
+		<div class="pill">
+			<span id="wsDot" class="dot neutral" aria-hidden="true"></span>
+			<span>WS</span>
+			<span id="wsText">Disconnected</span>
+		</div>
+		<div class="pill">
+			<span>Auth</span>
+			<span id="authText">—</span>
+		</div>
+	</div>
+
+	<div class="grid cols-3" style="margin-top:14px" aria-label="Switch positions (placeholder)">
+		<div class="card" style="background:rgba(255,255,255,0.10); border-color:rgba(255,255,255,0.18)">
+			<div class="stat-label" style="color:rgba(255,255,255,0.85)">Switch 1</div>
+			<div class="stat-value" style="color:var(--yellow)" id="sw1">—</div>
+			<div class="stat-sub" style="color:rgba(255,255,255,0.85)">Left / Right</div>
+		</div>
+		<div class="card" style="background:rgba(255,255,255,0.10); border-color:rgba(255,255,255,0.18)">
+			<div class="stat-label" style="color:rgba(255,255,255,0.85)">Switch 2</div>
+			<div class="stat-value" style="color:var(--yellow)" id="sw2">—</div>
+			<div class="stat-sub" style="color:rgba(255,255,255,0.85)">Left / Right</div>
+		</div>
+		<div class="card" style="background:rgba(255,255,255,0.10); border-color:rgba(255,255,255,0.18)">
+			<div class="stat-label" style="color:rgba(255,255,255,0.85)">Switch 3</div>
+			<div class="stat-value" style="color:var(--yellow)" id="sw3">—</div>
+			<div class="stat-sub" style="color:rgba(255,255,255,0.85)">Left / Right</div>
+		</div>
+	</div>
+
+	<div class="kiosk-row">
+		<a class="btn secondary" href="passcode.html">Back</a>
+		<a class="btn secondary" href="index.html">Finish (demo)</a>
+		<a class="btn ghost" href="index.html">Exit</a>
+	</div>
+
+	<p class="small">If connected to a backend, this screen can be wired to show live switch positions.</p>
+</div>
+
+<script src="cap-ui.js"></script>
+<script>
+	(function () {
+		"use strict";
+
+		function setText(id, text) {
+			var el = document.getElementById(id);
+			if (!el) return;
+			el.textContent = text;
+		}
+
+		function stageFromAuthStage(stage) {
+			if (!stage) return null;
+			var s = String(stage);
+			var m = s.match(/(Pattern|Switch)(\d)/i);
+			if (m && m[2]) return m[2];
+			return null;
+		}
+
+		function applySwitches(state) {
+			try {
+				var spdt = state && (state.spdt || state.switches || null);
+				if (spdt) {
+					setText("sw1", spdt.s1?.position ?? spdt[0]?.position ?? spdt.s1 ?? "—");
+					setText("sw2", spdt.s2?.position ?? spdt[1]?.position ?? spdt.s2 ?? "—");
+					setText("sw3", spdt.s3?.position ?? spdt[2]?.position ?? spdt.s3 ?? "—");
+				}
+			} catch (_e) {
+				// ignore
+			}
+		}
+
+		// Allow manual demo staging via ?stage=1|2|3
+		try {
+			var params = new URLSearchParams(location.search || "");
+			var stage = params.get("stage");
+			if (stage) setText("stageText", stage);
+		} catch (_e) {
+			// ignore
+		}
+
+		CAPUI.connectLiveState(function (state) {
+			CAPUI.applyLiveStateToCommonBadges(state);
+			applySwitches(state);
+			try {
+				var st = stageFromAuthStage(state && state.auth ? state.auth.stage : null);
+				if (st) setText("stageText", st);
+			} catch (_e) {
+				// ignore
+			}
+		});
+	})();
+</script>
+
+</body>
+</html>

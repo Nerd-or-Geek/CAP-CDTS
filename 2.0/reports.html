@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>CAP Reporting System — Reports</title>
+	<link rel="stylesheet" href="cap-ui.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="app-header">
+	<div class="title">
+		<h1>Civil Air Patrol Reporting System</h1>
+		<div class="subtitle">Reports</div>
+	</div>
+	<div class="status" aria-label="Live status">
+		<div class="pill" title="WebSocket connection status">
+			<span id="wsDot" class="dot neutral" aria-hidden="true"></span>
+			<span>WS</span>
+			<span id="wsText">Disconnected</span>
+		</div>
+		<div class="pill" title="Authentication stage">
+			<span>Auth</span>
+			<span id="authText">—</span>
+		</div>
+		<div class="pill" title="Current role">
+			<span>Role</span>
+			<span id="roleText">—</span>
+		</div>
+		<div class="pill" title="Last update timestamp">
+			<span>Updated</span>
+			<span id="updatedText">—</span>
+		</div>
+	</div>
+</header>
+
+<div class="container">
+	<aside class="sidebar">
+		<h2>Navigation</h2>
+		<nav class="nav" aria-label="Primary">
+			<a href="index.html">Dashboard</a>
+			<a href="people.html">People</a>
+			<a href="reports.html">Reports</a>
+			<a href="create_report.html">Create Report</a>
+			<a href="gpio.html">GPIO</a>
+		</nav>
+		<div class="note">
+			Visible reports depend on permissions.
+			The UI will try <code>GET /api/reports</code>.
+		</div>
+	</aside>
+
+	<main class="main" id="main">
+		<section class="card" aria-label="Reports list">
+			<h2>Reports</h2>
+			<p class="muted">Search and filter reports. Demo data is used when the API is unavailable.</p>
+
+			<div class="grid cols-3" aria-label="Filters">
+				<div>
+					<label for="searchNum">Search (report #)</label>
+					<input id="searchNum" name="searchNum" autocomplete="off" placeholder="123456">
+					<div class="help">Partial match is supported.</div>
+				</div>
+				<div>
+					<label for="statusFilter">Status</label>
+					<select id="statusFilter" name="statusFilter">
+						<option value="all" selected>All</option>
+						<option value="open">Open</option>
+						<option value="closed">Closed</option>
+					</select>
+					<div class="help">Open = no close timestamp.</div>
+				</div>
+				<div>
+					<label>Actions</label>
+					<div class="actions">
+						<button class="btn secondary" id="refreshReportsBtn" type="button">Refresh</button>
+						<a class="btn" href="create_report.html">Create report</a>
+					</div>
+				</div>
+			</div>
+
+			<div id="reportsMsg" class="alert neutral" style="display:none"></div>
+
+			<table class="table" aria-label="Reports table">
+				<thead>
+				<tr>
+					<th>Report #</th>
+					<th>Opened by / Person</th>
+					<th>Created</th>
+					<th>Status</th>
+					<th>Actions</th>
+				</tr>
+				</thead>
+				<tbody id="reportsTableBody">
+				<tr>
+					<td colspan="5" class="muted">Loading…</td>
+				</tr>
+				</tbody>
+			</table>
+		</section>
+
+		<section class="card" id="detailsCard" style="display:none" aria-label="Report details">
+			<h2>Report details</h2>
+			<p class="muted">Raw JSON (best-effort) for the selected report.</p>
+			<div class="actions">
+				<button class="btn secondary" id="closeDetailsBtn" type="button">Hide</button>
+			</div>
+			<pre id="reportDetails" style="white-space:pre-wrap; margin-top:12px; background:rgba(0,0,0,0.04); padding:12px; border-radius:10px; border:1px solid rgba(0,0,0,0.08);"></pre>
+		</section>
+	</main>
+</div>
+
+<script src="cap-ui.js"></script>
+<script>
+	(function () {
+		"use strict";
+
+		var localReports = null;
+
+		function showMsg(text, kind) {
+			var el = document.getElementById("reportsMsg");
+			if (!el) return;
+			el.style.display = "block";
+			el.classList.remove("ok", "bad", "neutral");
+			el.classList.add(kind || "neutral");
+			el.textContent = text;
+		}
+
+		function hideMsg() {
+			var el = document.getElementById("reportsMsg");
+			if (!el) return;
+			el.style.display = "none";
+		}
+
+		function safeText(v) {
+			if (v === null || v === undefined) return "";
+			return String(v);
+		}
+
+		function reportNum(r) {
+			return r.num ?? r.report_num ?? r.reportNum ?? r.id ?? "—";
+		}
+
+		function reportWho(r) {
+			return r.person ?? r.opened_by ?? r.openedBy ?? r.username ?? "—";
+		}
+
+		function reportCreated(r) {
+			return r.created_at_utc ?? r.createdAtUtc ?? r.created_at ?? r.createdAt ?? "";
+		}
+
+		function isClosed(r) {
+			return Boolean(r.closed_at_utc ?? r.closedAtUtc ?? r.closed_at ?? r.closedAt);
+		}
+
+		function filterReports(reports) {
+			var q = (document.getElementById("searchNum").value || "").trim();
+			var status = document.getElementById("statusFilter").value;
+			var out = Array.isArray(reports) ? reports.slice() : [];
+
+			if (q) {
+				out = out.filter(function (r) {
+					return safeText(reportNum(r)).toLowerCase().includes(q.toLowerCase());
+				});
+			}
+			if (status === "open") {
+				out = out.filter(function (r) { return !isClosed(r); });
+			} else if (status === "closed") {
+				out = out.filter(function (r) { return isClosed(r); });
+			}
+			return out;
+		}
+
+		function showDetails(obj) {
+			var card = document.getElementById("detailsCard");
+			var pre = document.getElementById("reportDetails");
+			if (!card || !pre) return;
+			card.style.display = "block";
+			pre.textContent = JSON.stringify(obj, null, 2);
+			card.scrollIntoView({ behavior: "smooth", block: "start" });
+		}
+
+		function hideDetails() {
+			var card = document.getElementById("detailsCard");
+			if (!card) return;
+			card.style.display = "none";
+		}
+
+		async function viewReportDetails(reportObj) {
+			var n = reportNum(reportObj);
+			var resp = await CAPUI.apiGet("/api/reports/" + encodeURIComponent(n));
+			if (resp.ok && resp.data) {
+				showDetails(resp.data);
+			} else {
+				showDetails(reportObj);
+			}
+		}
+
+		function renderReports(reports) {
+			var tbody = document.getElementById("reportsTableBody");
+			if (!tbody) return;
+			tbody.innerHTML = "";
+
+			if (!Array.isArray(reports) || reports.length === 0) {
+				tbody.innerHTML = '<tr><td colspan="5" class="muted">No matching reports.</td></tr>';
+				return;
+			}
+
+			reports.forEach(function (r) {
+				var tr = document.createElement("tr");
+
+				var tdNum = document.createElement("td");
+				tdNum.textContent = safeText(reportNum(r));
+				tr.appendChild(tdNum);
+
+				var tdWho = document.createElement("td");
+				tdWho.textContent = safeText(reportWho(r));
+				tr.appendChild(tdWho);
+
+				var tdCreated = document.createElement("td");
+				tdCreated.textContent = safeText(reportCreated(r));
+				tr.appendChild(tdCreated);
+
+				var tdStatus = document.createElement("td");
+				var span = document.createElement("span");
+				span.className = "badge " + (isClosed(r) ? "closed" : "open");
+				span.textContent = isClosed(r) ? "Closed" : "Open";
+				tdStatus.appendChild(span);
+				tr.appendChild(tdStatus);
+
+				var tdAct = document.createElement("td");
+				var btn = document.createElement("button");
+				btn.type = "button";
+				btn.className = "btn ghost";
+				btn.textContent = "View";
+				btn.addEventListener("click", function () { viewReportDetails(r); });
+				tdAct.appendChild(btn);
+				tr.appendChild(tdAct);
+
+				tbody.appendChild(tr);
+			});
+		}
+
+		async function loadReports() {
+			hideMsg();
+			hideDetails();
+
+			if (!localReports) {
+				var sessionReports = CAPUI.loadSessionReports();
+				localReports = sessionReports.concat(CAPUI.demoReports());
+			}
+
+			// Start with local/demo data so the page is never empty.
+			renderReports(filterReports(localReports));
+
+			var resp = await CAPUI.apiGet("/api/reports");
+			if (resp.ok && Array.isArray(resp.data)) {
+				localReports = resp.data;
+				renderReports(filterReports(localReports));
+				showMsg("Loaded reports from backend API.", "ok");
+				return;
+			}
+
+			if (resp.status === 401 || resp.status === 403) {
+				showMsg("Not authorized for /api/reports. Showing demo/local data.", "bad");
+				return;
+			}
+
+			showMsg(
+				"Backend API not available. Showing demo/local data. (Base: " + CAPUI.defaultApiBase() + ")",
+				"neutral"
+			);
+		}
+
+		function onFilterChange() {
+			renderReports(filterReports(localReports || []));
+		}
+
+		function applyInitialSearchFromUrl() {
+			try {
+				var params = new URLSearchParams(location.search || "");
+				var q = params.get("q");
+				if (!q && location.hash && location.hash.length > 1) {
+					q = decodeURIComponent(location.hash.slice(1));
+				}
+				if (q) {
+					document.getElementById("searchNum").value = q;
+				}
+			} catch (_e) {
+				// ignore
+			}
+		}
+
+		CAPUI.markActiveNav();
+		CAPUI.connectLiveState(function (state) {
+			CAPUI.applyLiveStateToCommonBadges(state);
+		});
+
+		document.getElementById("refreshReportsBtn").addEventListener("click", loadReports);
+		document.getElementById("searchNum").addEventListener("input", onFilterChange);
+		document.getElementById("statusFilter").addEventListener("change", onFilterChange);
+		document.getElementById("closeDetailsBtn").addEventListener("click", hideDetails);
+
+		applyInitialSearchFromUrl();
+		loadReports();
+	})();
+</script>
+
+</body>
+</html>

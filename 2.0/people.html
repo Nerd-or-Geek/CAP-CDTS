@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>CAP Reporting System — People</title>
+	<link rel="stylesheet" href="cap-ui.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="app-header">
+	<div class="title">
+		<h1>Civil Air Patrol Reporting System</h1>
+		<div class="subtitle">People management (admin)</div>
+	</div>
+	<div class="status" aria-label="Live status">
+		<div class="pill" title="WebSocket connection status">
+			<span id="wsDot" class="dot neutral" aria-hidden="true"></span>
+			<span>WS</span>
+			<span id="wsText">Disconnected</span>
+		</div>
+		<div class="pill" title="Authentication stage">
+			<span>Auth</span>
+			<span id="authText">—</span>
+		</div>
+		<div class="pill" title="Current role">
+			<span>Role</span>
+			<span id="roleText">—</span>
+		</div>
+		<div class="pill" title="Last update timestamp">
+			<span>Updated</span>
+			<span id="updatedText">—</span>
+		</div>
+	</div>
+</header>
+
+<div class="container">
+	<aside class="sidebar">
+		<h2>Navigation</h2>
+		<nav class="nav" aria-label="Primary">
+			<a href="index.html">Dashboard</a>
+			<a href="people.html">People</a>
+			<a href="reports.html">Reports</a>
+			<a href="create_report.html">Create Report</a>
+			<a href="gpio.html">GPIO</a>
+		</nav>
+		<div class="note">
+			Admin-only. The UI will try <code>GET /api/users</code>.
+			If not available, demo data is shown.
+		</div>
+	</aside>
+
+	<main class="main" id="main">
+		<section class="card" aria-label="People list">
+			<h2>People</h2>
+			<p class="muted">Manage accounts used to authenticate on the device.</p>
+			<div class="actions">
+				<button class="btn secondary" id="refreshBtn" type="button">Refresh</button>
+				<a class="btn ghost" href="wake.html">Test auth flow</a>
+			</div>
+			<div id="peopleMsg" class="alert neutral" style="display:none"></div>
+			<table class="table" aria-label="People table">
+				<thead>
+				<tr>
+					<th>Username</th>
+					<th>RFID UID</th>
+					<th>Role</th>
+				</tr>
+				</thead>
+				<tbody id="peopleTableBody">
+				<tr>
+					<td colspan="3" class="muted">Loading…</td>
+				</tr>
+				</tbody>
+			</table>
+		</section>
+
+		<section class="card" aria-label="Add person">
+			<h2>Add person</h2>
+			<p class="muted">Creates a new account (requires admin on the backend).</p>
+			<form id="addPersonForm">
+				<label for="username">Username</label>
+				<input id="username" name="username" autocomplete="off" placeholder="jdoe" required>
+
+				<label for="rfidUid">RFID UID</label>
+				<input id="rfidUid" name="rfidUid" autocomplete="off" placeholder="DE AD BE EF" required>
+				<div class="help">Enter bytes separated by spaces (example above).</div>
+
+				<label for="level">Role</label>
+				<select id="level" name="level" required>
+					<option value="0">User</option>
+					<option value="1">Admin</option>
+				</select>
+
+				<label for="passcode">5-digit passcode</label>
+				<input id="passcode" name="passcode" type="password" inputmode="numeric" pattern="\d{5}" placeholder="•••••" required>
+				<div class="help">Exactly 5 digits (rotary input on-device).</div>
+
+				<div class="actions">
+					<button class="btn" type="submit">Create person</button>
+					<button class="btn secondary" id="clearFormBtn" type="button">Clear</button>
+				</div>
+				<div id="addPersonMsg" class="alert neutral" style="display:none"></div>
+			</form>
+		</section>
+	</main>
+</div>
+
+<script src="cap-ui.js"></script>
+<script>
+	(function () {
+		"use strict";
+
+		var localUsers = null;
+
+		function showMsg(id, text, kind) {
+			var el = document.getElementById(id);
+			if (!el) return;
+			el.style.display = "block";
+			el.classList.remove("ok", "bad", "neutral");
+			el.classList.add(kind || "neutral");
+			el.textContent = text;
+		}
+
+		function hideMsg(id) {
+			var el = document.getElementById(id);
+			if (!el) return;
+			el.style.display = "none";
+		}
+
+		function safeText(v) {
+			if (v === null || v === undefined) return "";
+			return String(v);
+		}
+
+		function renderUsers(users) {
+			var tbody = document.getElementById("peopleTableBody");
+			if (!tbody) return;
+			tbody.innerHTML = "";
+
+			if (!Array.isArray(users) || users.length === 0) {
+				tbody.innerHTML = '<tr><td colspan="3" class="muted">No users.</td></tr>';
+				return;
+			}
+
+			users.forEach(function (u) {
+				var tr = document.createElement("tr");
+
+				var tdUser = document.createElement("td");
+				tdUser.textContent = safeText(u.username ?? u.name ?? "—");
+				tr.appendChild(tdUser);
+
+				var tdUid = document.createElement("td");
+				tdUid.textContent = safeText(u.rfid_uid ?? u.rfidUid ?? u.uid ?? "—");
+				tr.appendChild(tdUid);
+
+				var tdRole = document.createElement("td");
+				var lvl = u.level ?? u.role ?? null;
+				if (lvl === 1 || lvl === "1" || String(lvl).toLowerCase() === "admin") tdRole.textContent = "Admin";
+				else if (lvl === 0 || lvl === "0" || String(lvl).toLowerCase() === "user") tdRole.textContent = "User";
+				else tdRole.textContent = safeText(lvl ?? "—");
+				tr.appendChild(tdRole);
+
+				tbody.appendChild(tr);
+			});
+		}
+
+		async function loadUsers() {
+			hideMsg("peopleMsg");
+
+			if (!localUsers) {
+				localUsers = CAPUI.demoUsers();
+			}
+
+			renderUsers(localUsers);
+
+			var resp = await CAPUI.apiGet("/api/users");
+			if (resp.ok && Array.isArray(resp.data)) {
+				localUsers = resp.data;
+				renderUsers(localUsers);
+				showMsg("peopleMsg", "Loaded users from backend API.", "ok");
+				return;
+			}
+
+			if (resp.status === 401 || resp.status === 403) {
+				showMsg("peopleMsg", "Not authorized for /api/users (admin required). Showing demo/local data.", "bad");
+				return;
+			}
+
+			showMsg(
+				"peopleMsg",
+				"Backend API not available. Showing demo/local data. (Base: " + CAPUI.defaultApiBase() + ")",
+				"neutral"
+			);
+		}
+
+		function validatePasscode(pc) {
+			return /^\d{5}$/.test(pc);
+		}
+
+		async function onCreatePerson(evt) {
+			evt.preventDefault();
+			hideMsg("addPersonMsg");
+
+			var username = (document.getElementById("username").value || "").trim();
+			var rfidUid = (document.getElementById("rfidUid").value || "").trim();
+			var level = parseInt(document.getElementById("level").value, 10);
+			var passcode = (document.getElementById("passcode").value || "").trim();
+
+			if (!username) {
+				showMsg("addPersonMsg", "Username is required.", "bad");
+				return;
+			}
+			if (!rfidUid) {
+				showMsg("addPersonMsg", "RFID UID is required.", "bad");
+				return;
+			}
+			if (!validatePasscode(passcode)) {
+				showMsg("addPersonMsg", "Passcode must be exactly 5 digits.", "bad");
+				return;
+			}
+
+			var payload = {
+				username: username,
+				rfid_uid: rfidUid,
+				level: level,
+				passcode: passcode,
+			};
+
+			var resp = await CAPUI.apiPost("/api/users", payload);
+			if (resp.ok) {
+				showMsg("addPersonMsg", "Person created via backend API.", "ok");
+				document.getElementById("passcode").value = "";
+				await loadUsers();
+				return;
+			}
+
+			// Demo/offline fallback: add to local list for this session.
+			localUsers = localUsers || CAPUI.demoUsers();
+			localUsers = localUsers.concat([{ username: username, rfid_uid: rfidUid, level: level }]);
+			renderUsers(localUsers);
+			showMsg(
+				"addPersonMsg",
+				"Backend not available (or rejected). Added locally for this session only. (Status: " + resp.status + ")",
+				resp.status === 401 || resp.status === 403 ? "bad" : "neutral"
+			);
+		}
+
+		function clearForm() {
+			document.getElementById("username").value = "";
+			document.getElementById("rfidUid").value = "";
+			document.getElementById("level").value = "0";
+			document.getElementById("passcode").value = "";
+			hideMsg("addPersonMsg");
+		}
+
+		CAPUI.markActiveNav();
+		CAPUI.connectLiveState(function (state) {
+			CAPUI.applyLiveStateToCommonBadges(state);
+		});
+
+		document.getElementById("refreshBtn").addEventListener("click", loadUsers);
+		document.getElementById("addPersonForm").addEventListener("submit", onCreatePerson);
+		document.getElementById("clearFormBtn").addEventListener("click", clearForm);
+
+		loadUsers();
+	})();
+</script>
+
+</body>
+</html>

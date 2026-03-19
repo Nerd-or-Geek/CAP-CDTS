@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>CAP-CDTS — Passcode</title>
+	<link rel="stylesheet" href="cap-ui.css">
+</head>
+<body class="kiosk navy">
+
+<div class="kiosk-card" role="main" aria-label="Enter passcode">
+	<h1>Enter passcode</h1>
+	<p>Use the rotary dial to enter your 5-digit passcode, then press the dial button to confirm.</p>
+
+	<div class="passcode-boxes" aria-label="Passcode entry (placeholder)">
+		<div class="pass-box">●</div>
+		<div class="pass-box">●</div>
+		<div class="pass-box">●</div>
+		<div class="pass-box">●</div>
+		<div class="pass-box">●</div>
+	</div>
+
+	<div class="kiosk-row" aria-label="Live status">
+		<div class="pill">
+			<span id="wsDot" class="dot neutral" aria-hidden="true"></span>
+			<span>WS</span>
+			<span id="wsText">Disconnected</span>
+		</div>
+		<div class="pill">
+			<span>Auth</span>
+			<span id="authText">—</span>
+		</div>
+		<div class="pill">
+			<span>Role</span>
+			<span id="roleText">—</span>
+		</div>
+		<div class="pill">
+			<span>Updated</span>
+			<span id="updatedText">—</span>
+		</div>
+	</div>
+
+	<div class="kiosk-row">
+		<a class="btn secondary" href="wake.html">Back</a>
+		<a class="btn secondary" href="switches.html">Continue (demo)</a>
+		<a class="btn ghost" href="index.html">Exit</a>
+	</div>
+
+	<p class="small">Keyboard demo: <kbd>←</kbd>/<kbd>→</kbd> change digit, <kbd>Enter</kbd> confirm (not wired in this static prototype).</p>
+</div>
+
+<script src="cap-ui.js"></script>
+<script>
+	(function () {
+		"use strict";
+		CAPUI.connectLiveState(function (state) {
+			CAPUI.applyLiveStateToCommonBadges(state);
+		});
+	})();
+</script>
+
+</body>
+</html>

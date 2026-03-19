@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>CAP-CDTS — Scan Badge</title>
+	<link rel="stylesheet" href="cap-ui.css">
+</head>
+<body class="kiosk blue">
+
+<div class="kiosk-card" role="main" aria-label="Scan badge">
+	<h1>Scan your CAP ID</h1>
+	<p>Hold your RFID card near the reader to begin authentication.</p>
+
+	<div class="kiosk-row" aria-label="Live status">
+		<div class="pill">
+			<span id="wsDot" class="dot neutral" aria-hidden="true"></span>
+			<span>WS</span>
+			<span id="wsText">Disconnected</span>
+		</div>
+		<div class="pill">
+			<span>Auth</span>
+			<span id="authText">—</span>
+		</div>
+		<div class="pill">
+			<span>Role</span>
+			<span id="roleText">—</span>
+		</div>
+		<div class="pill">
+			<span>Updated</span>
+			<span id="updatedText">—</span>
+		</div>
+	</div>
+
+	<p class="small">Tip: If you’re demoing without hardware, use the links below.</p>
+	<div class="kiosk-row">
+		<a class="btn secondary" href="passcode.html">Continue (demo)</a>
+		<a class="btn ghost" href="index.html">Exit</a>
+	</div>
+
+	<p class="small">Keyboard demo: press <kbd>Esc</kbd> to exit (not wired in this static prototype).</p>
+</div>
+
+<script src="cap-ui.js"></script>
+<script>
+	(function () {
+		"use strict";
+		CAPUI.connectLiveState(function (state) {
+			CAPUI.applyLiveStateToCommonBadges(state);
+		});
+	})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>CAP Reporting System — Create Report</title>
+	<link rel="stylesheet" href="cap-ui.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="app-header">
+	<div class="title">
+		<h1>Civil Air Patrol Reporting System</h1>
+		<div class="subtitle">Create a new report</div>
+	</div>
+	<div class="status" aria-label="Live status">
+		<div class="pill" title="WebSocket connection status">
+			<span id="wsDot" class="dot neutral" aria-hidden="true"></span>
+			<span>WS</span>
+			<span id="wsText">Disconnected</span>
+		</div>
+		<div class="pill" title="Authentication stage">
+			<span>Auth</span>
+			<span id="authText">—</span>
+		</div>
+		<div class="pill" title="Current role">
+			<span>Role</span>
+			<span id="roleText">—</span>
+		</div>
+		<div class="pill" title="Last update timestamp">
+			<span>Updated</span>
+			<span id="updatedText">—</span>
+		</div>
+	</div>
+</header>
+
+<div class="container">
+	<aside class="sidebar">
+		<h2>Navigation</h2>
+		<nav class="nav" aria-label="Primary">
+			<a href="index.html">Dashboard</a>
+			<a href="people.html">People</a>
+			<a href="reports.html">Reports</a>
+			<a href="create_report.html">Create Report</a>
+			<a href="gpio.html">GPIO</a>
+		</nav>
+		<div class="note">
+			Typically admin-only. The UI will try <code>POST /api/reports</code>.
+			If unavailable, it will create a local demo report for this browser session.
+		</div>
+	</aside>
+
+	<main class="main" id="main">
+		<section class="card" aria-label="Create report form">
+			<h2>Create report</h2>
+			<p class="muted">Capture the essentials quickly. You can add details later.</p>
+
+			<form id="createReportForm">
+				<div class="grid cols-2">
+					<div>
+						<label for="person">Person</label>
+						<select id="person" name="person" required>
+							<option value="" selected>Loading…</option>
+						</select>
+						<div class="help">Pulled from <code>/api/users</code> when available.</div>
+					</div>
+					<div>
+						<label for="category">Category</label>
+						<select id="category" name="category" required>
+							<option value="Incident" selected>Incident</option>
+							<option value="Safety">Safety</option>
+							<option value="Compliance">Compliance</option>
+							<option value="Other">Other</option>
+						</select>
+						<div class="help">Used for routing and reporting.</div>
+					</div>
+				</div>
+
+				<div class="grid cols-2">
+					<div>
+						<label for="title">Title</label>
+						<input id="title" name="title" autocomplete="off" placeholder="Short summary" required>
+					</div>
+					<div>
+						<label for="priority">Priority</label>
+						<select id="priority" name="priority" required>
+							<option value="Routine" selected>Routine</option>
+							<option value="Urgent">Urgent</option>
+						</select>
+					</div>
+				</div>
+
+				<label for="description">Description</label>
+				<textarea id="description" name="description" rows="7" placeholder="Describe what happened…" required></textarea>
+				<div class="help">Keep it factual. Avoid speculation.</div>
+
+				<div class="actions">
+					<button class="btn" type="submit">Submit report</button>
+					<button class="btn secondary" id="clearBtn" type="button">Clear</button>
+				</div>
+				<div id="createMsg" class="alert neutral" style="display:none"></div>
+			</form>
+		</section>
+
+		<section class="card" id="resultCard" style="display:none" aria-label="Submission result">
+			<h2>Report created</h2>
+			<p class="muted">Reference number:</p>
+			<div class="stat-value" id="createdReportNum">—</div>
+			<p class="muted" id="createdReportMeta"></p>
+			<div class="actions">
+				<a class="btn secondary" id="viewInReportsLink" href="reports.html">View in Reports</a>
+				<a class="btn ghost" href="create_report.html">Create another</a>
+			</div>
+		</section>
+
+		<section class="card" aria-label="Notes">
+			<h2>Notes</h2>
+			<ul class="muted">
+				<li>If you open these pages from <code>file://</code>, the UI will assume a backend at <strong>localhost:8080</strong>.</li>
+				<li>When offline, created reports are stored in <code>sessionStorage</code> for this tab/session.</li>
+			</ul>
+		</section>
+	</main>
+</div>
+
+<script src="cap-ui.js"></script>
+<script>
+	(function () {
+		"use strict";
+
+		var currentAuthUser = null;
+
+		function showMsg(text, kind) {
+			var el = document.getElementById("createMsg");
+			if (!el) return;
+			el.style.display = "block";
+			el.classList.remove("ok", "bad", "neutral");
+			el.classList.add(kind || "neutral");
+			el.textContent = text;
+		}
+
+		function hideMsg() {
+			var el = document.getElementById("createMsg");
+			if (!el) return;
+			el.style.display = "none";
+		}
+
+		function safeText(v) {
+			if (v === null || v === undefined) return "";
+			return String(v);
+		}
+
+		function randomReportNum() {
+			return Math.floor(100000 + Math.random() * 900000);
+		}
+
+		function populatePeople(users) {
+			var sel = document.getElementById("person");
+			if (!sel) return;
+
+			sel.innerHTML = "";
+
+			var placeholder = document.createElement("option");
+			placeholder.value = "";
+			placeholder.textContent = "Select person";
+			placeholder.selected = true;
+			placeholder.disabled = true;
+			sel.appendChild(placeholder);
+
+			(Array.isArray(users) ? users : []).forEach(function (u) {
+				var opt = document.createElement("option");
+				opt.value = safeText(u.username ?? u.name ?? "");
+				opt.textContent = safeText(u.username ?? u.name ?? "(unknown)");
+				sel.appendChild(opt);
+			});
+		}
+
+		async function loadPeopleOptions() {
+			// Start with demo users.
+			var users = CAPUI.demoUsers();
+			populatePeople(users);
+
+			var resp = await CAPUI.apiGet("/api/users");
+			if (resp.ok && Array.isArray(resp.data) && resp.data.length > 0) {
+				populatePeople(resp.data);
+			}
+		}
+
+		function showResult(reportNum, metaText) {
+			var card = document.getElementById("resultCard");
+			var numEl = document.getElementById("createdReportNum");
+			var metaEl = document.getElementById("createdReportMeta");
+			var link = document.getElementById("viewInReportsLink");
+			if (!card || !numEl || !metaEl || !link) return;
+
+			numEl.textContent = safeText(reportNum);
+			metaEl.textContent = metaText || "";
+			link.href = "reports.html?q=" + encodeURIComponent(String(reportNum));
+			card.style.display = "block";
+			card.scrollIntoView({ behavior: "smooth", block: "start" });
+		}
+
+		async function onSubmit(evt) {
+			evt.preventDefault();
+			hideMsg();
+
+			var person = (document.getElementById("person").value || "").trim();
+			var title = (document.getElementById("title").value || "").trim();
+			var category = document.getElementById("category").value;
+			var priority = document.getElementById("priority").value;
+			var description = (document.getElementById("description").value || "").trim();
+
+			if (!person) {
+				showMsg("Please select a person.", "bad");
+				return;
+			}
+			if (!title) {
+				showMsg("Title is required.", "bad");
+				return;
+			}
+			if (!description) {
+				showMsg("Description is required.", "bad");
+				return;
+			}
+
+			var payload = {
+				person: person,
+				title: title,
+				category: category,
+				priority: priority,
+				description: description,
+			};
+
+			// Helpful metadata for backends that support it.
+			if (currentAuthUser) {
+				payload.opened_by = currentAuthUser;
+			}
+
+			var resp = await CAPUI.apiPost("/api/reports", payload);
+			if (resp.ok) {
+				var n = resp.data && (resp.data.num ?? resp.data.report_num ?? resp.data.reportNum) ? (resp.data.num ?? resp.data.report_num ?? resp.data.reportNum) : null;
+				var num = n || randomReportNum();
+				showMsg("Report submitted via backend API.", "ok");
+				showResult(num, "Backend API accepted the report.");
+				return;
+			}
+
+			// Offline/demo: create a local session report.
+			var localNum = randomReportNum();
+			var nowIso = new Date().toISOString();
+			var localReport = {
+				num: localNum,
+				created_at_utc: nowIso,
+				opened_by: currentAuthUser || "(local)",
+				opened_by_level: null,
+				closed_by: null,
+				closed_at_utc: null,
+				closing_comments: null,
+				person: person,
+				title: title,
+				category: category,
+				priority: priority,
+				description: description,
+			};
+			CAPUI.addSessionReport(localReport);
+
+			var kind = (resp.status === 401 || resp.status === 403) ? "bad" : "neutral";
+			showMsg("Backend rejected or unavailable (status " + resp.status + "). Saved as local demo report.", kind);
+			showResult(localNum, "Stored locally in this browser session (sessionStorage)." );
+		}
+
+		function clearForm() {
+			document.getElementById("person").value = "";
+			document.getElementById("title").value = "";
+			document.getElementById("category").value = "Incident";
+			document.getElementById("priority").value = "Routine";
+			document.getElementById("description").value = "";
+			hideMsg();
+		}
+
+		CAPUI.markActiveNav();
+		CAPUI.connectLiveState(function (state) {
+			CAPUI.applyLiveStateToCommonBadges(state);
+			try {
+				currentAuthUser = state && state.auth && state.auth.user ? (state.auth.user.username || null) : null;
+			} catch (_e) {
+				currentAuthUser = null;
+			}
+		});
+
+		document.getElementById("createReportForm").addEventListener("submit", onSubmit);
+		document.getElementById("clearBtn").addEventListener("click", clearForm);
+
+		loadPeopleOptions();
+	})();
+</script>
+
+</body>
+</html>
