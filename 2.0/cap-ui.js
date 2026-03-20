@@ -6,6 +6,9 @@
 (function () {
     "use strict";
 
+    var AUTH_TOKEN_KEY = "cap_cdts_auth_token";
+    var AUTH_USER_KEY = "cap_cdts_auth_user";
+
     function qs(sel, root) {
         return (root || document).querySelector(sel);
     }
@@ -37,6 +40,64 @@
         } catch (_e) {
             return iso;
         }
+    }
+
+    function getAuthToken() {
+        try {
+            return (localStorage.getItem(AUTH_TOKEN_KEY) || "").trim();
+        } catch (_e) {
+            return "";
+        }
+    }
+
+    function setAuthToken(token) {
+        try {
+            localStorage.setItem(AUTH_TOKEN_KEY, (token || "").trim());
+        } catch (_e) {}
+    }
+
+    function clearAuthToken() {
+        try {
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+        } catch (_e) {}
+    }
+
+    function getAuthUser() {
+        try {
+            var raw = localStorage.getItem(AUTH_USER_KEY);
+            if (!raw) return null;
+            return JSON.parse(raw);
+        } catch (_e) {
+            return null;
+        }
+    }
+
+    function setAuthUser(userObj) {
+        try {
+            if (!userObj) {
+                localStorage.removeItem(AUTH_USER_KEY);
+                return;
+            }
+            localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userObj));
+        } catch (_e) {}
+    }
+
+    function clearAuthUser() {
+        try {
+            localStorage.removeItem(AUTH_USER_KEY);
+        } catch (_e) {}
+    }
+
+    function roleNameFromLevel(level) {
+        var n = parseInt(level, 10);
+        if (n === 1) return "Admin";
+        if (n === 2) return "Junior admin";
+        if (n === 3) return "Moderator";
+        if (n === 4) return "Advanced user";
+        if (n === 5) return "Basic";
+        // Legacy
+        if (n === 0) return "Moderator";
+        return "—";
     }
 
     function markActiveNav() {
@@ -81,6 +142,11 @@
                 "Accept": "application/json",
             },
         };
+
+        var tok = getAuthToken();
+        if (tok) {
+            init.headers["Authorization"] = "Bearer " + tok;
+        }
 
         if (body !== undefined) {
             init.headers["Content-Type"] = "application/json";
@@ -155,14 +221,32 @@
         var stage = state.auth.stage || "Unknown";
         var user = state.auth.user && state.auth.user.username ? state.auth.user.username : null;
         if (user) return stage + " (" + user + ")";
+
+        // Placeholder backend currently reports stage "None" without a user.
+        if (String(stage).toLowerCase() === "none") return "—";
         return stage;
     }
 
     function renderUserRole(state) {
         var lvl = state && state.auth && state.auth.user ? state.auth.user.level : null;
-        if (lvl === 1) return "Admin";
-        if (lvl === 0) return "User";
-        return "—";
+        var r = roleNameFromLevel(lvl);
+        return r || "—";
+    }
+
+    function applyLocalAuthBadgesFallback() {
+        var u = getAuthUser();
+        if (!u || !u.username) return;
+
+        // Only fill if the backend/live state didn't set meaningful values.
+        var authText = (document.getElementById("authText") && document.getElementById("authText").textContent) ? document.getElementById("authText").textContent.trim() : "";
+        if (!authText || authText === "—") {
+            setText("authText", "Logged in (" + u.username + ")");
+        }
+
+        var roleText = (document.getElementById("roleText") && document.getElementById("roleText").textContent) ? document.getElementById("roleText").textContent.trim() : "";
+        if (!roleText || roleText === "—") {
+            setText("roleText", roleNameFromLevel(u.level));
+        }
     }
 
     function applyLiveStateToCommonBadges(state) {
@@ -171,6 +255,8 @@
         if (state && state.last_update_utc) {
             setText("updatedText", fmtTime(state.last_update_utc));
         }
+
+        applyLocalAuthBadgesFallback();
     }
 
     // Demo data (used when backend isn't running)
@@ -206,17 +292,25 @@
     function demoUsers() {
         return [
             { username: "MOCK-ADMIN", rfid_uid: "DE AD BE EF", level: 1 },
-            { username: "jdoe", rfid_uid: "01 23 45 67", level: 0 },
+            { username: "jdoe", rfid_uid: "01 23 45 67", level: 3 },
         ];
     }
 
     // Public API
     window.CAPUI = {
+        getAuthToken: getAuthToken,
+        setAuthToken: setAuthToken,
+        clearAuthToken: clearAuthToken,
+        getAuthUser: getAuthUser,
+        setAuthUser: setAuthUser,
+        clearAuthUser: clearAuthUser,
+        roleNameFromLevel: roleNameFromLevel,
         markActiveNav: markActiveNav,
         connectLiveState: connectLiveState,
         applyLiveStateToCommonBadges: applyLiveStateToCommonBadges,
         apiGet: apiGet,
         apiPost: apiPost,
+        apiJson: apiJson,
         defaultApiBase: defaultApiBase,
         demoReports: demoReports,
         loadSessionReports: loadSessionReports,

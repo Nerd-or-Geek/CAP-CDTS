@@ -13,7 +13,7 @@
 <header class="app-header">
 	<div class="title">
 		<h1>Civil Air Patrol Reporting System</h1>
-		<div class="subtitle">People management (admin)</div>
+		<div class="subtitle">People management</div>
 	</div>
 	<div class="status" aria-label="Live status">
 		<div class="pill" title="WebSocket connection status">
@@ -45,10 +45,12 @@
 			<a href="reports.html">Reports</a>
 			<a href="create_report.html">Create Report</a>
 			<a href="gpio.html">GPIO</a>
+			<a href="update.html">Update</a>
+			<a href="login.html">Login</a>
 		</nav>
 		<div class="note">
-			Admin-only. The UI will try <code>GET /api/users</code>.
-			If not available, demo data is shown.
+			Viewing requires login (<code>GET /api/users</code>).
+			Creating/editing requires Admin or Junior admin.
 		</div>
 	</aside>
 
@@ -67,19 +69,57 @@
 					<th>Username</th>
 					<th>RFID UID</th>
 					<th>Role</th>
+					<th>Actions</th>
 				</tr>
 				</thead>
 				<tbody id="peopleTableBody">
 				<tr>
-					<td colspan="3" class="muted">Loading…</td>
+					<td colspan="4" class="muted">Loading…</td>
 				</tr>
 				</tbody>
 			</table>
 		</section>
 
+		<section class="card" id="editCard" style="display:none" aria-label="Edit person">
+			<h2>Edit person</h2>
+			<p class="muted" id="editHint">—</p>
+			<form id="editPersonForm">
+				<label for="editUsername">Username</label>
+				<input id="editUsername" name="editUsername" disabled>
+
+				<label for="editRfidUid">RFID UID</label>
+				<input id="editRfidUid" name="editRfidUid" autocomplete="off" placeholder="DE AD BE EF">
+				<div class="help">Leave blank to keep unchanged.</div>
+
+				<label for="editLevel">Role</label>
+				<select id="editLevel" name="editLevel">
+					<option value="1">Admin</option>
+					<option value="2">Junior admin</option>
+					<option value="3">Moderator</option>
+					<option value="4">Advanced user</option>
+					<option value="5">Basic (no login)</option>
+				</select>
+
+				<label for="editPasscode">New 5-digit passcode</label>
+				<input id="editPasscode" name="editPasscode" type="password" inputmode="numeric" pattern="\d{5}" placeholder="•••••">
+				<div class="help">Optional. Leave blank to keep existing.</div>
+
+				<div style="display:flex; align-items:center; gap:10px; margin: -6px 0 14px 0;">
+					<input id="editClearPasscode" type="checkbox" style="width:auto; margin:0">
+					<label for="editClearPasscode" style="margin:0; font-weight:700">Clear passcode (danger)</label>
+				</div>
+
+				<div class="actions">
+					<button class="btn" type="submit">Save changes</button>
+					<button class="btn secondary" id="cancelEditBtn" type="button">Cancel</button>
+				</div>
+				<div id="editPersonMsg" class="alert neutral" style="display:none"></div>
+			</form>
+		</section>
+
 		<section class="card" aria-label="Add person">
 			<h2>Add person</h2>
-			<p class="muted">Creates a new account (requires admin on the backend).</p>
+			<p class="muted">Creates a new account (requires Admin or Junior admin on the backend).</p>
 			<form id="addPersonForm">
 				<label for="username">Username</label>
 				<input id="username" name="username" autocomplete="off" placeholder="jdoe" required>
@@ -90,13 +130,16 @@
 
 				<label for="level">Role</label>
 				<select id="level" name="level" required>
-					<option value="0">User</option>
+					<option value="3" selected>Moderator</option>
+					<option value="4">Advanced user</option>
+					<option value="5">Basic (no login)</option>
+					<option value="2">Junior admin</option>
 					<option value="1">Admin</option>
 				</select>
 
 				<label for="passcode">5-digit passcode</label>
-				<input id="passcode" name="passcode" type="password" inputmode="numeric" pattern="\d{5}" placeholder="•••••" required>
-				<div class="help">Exactly 5 digits (rotary input on-device).</div>
+				<input id="passcode" name="passcode" type="password" inputmode="numeric" pattern="\d{5}" placeholder="•••••">
+				<div class="help">Required for all roles except Basic.</div>
 
 				<div class="actions">
 					<button class="btn" type="submit">Create person</button>
@@ -114,6 +157,7 @@
 		"use strict";
 
 		var localUsers = null;
+		var currentUser = CAPUI.getAuthUser();
 
 		function showMsg(id, text, kind) {
 			var el = document.getElementById(id);
@@ -135,13 +179,105 @@
 			return String(v);
 		}
 
+		function normalizeLevel(level) {
+			var n = parseInt(level, 10);
+			if (n === 0) return 3; // legacy
+			if (!Number.isFinite(n)) return 999;
+			return n;
+		}
+
+		function myLevel() {
+			return currentUser ? normalizeLevel(currentUser.level) : 999;
+		}
+
+		function isAdmin() {
+			return myLevel() === 1;
+		}
+
+		function isJunior() {
+			return myLevel() === 2;
+		}
+
+		function canManageUsers() {
+			var lvl = myLevel();
+			return lvl === 1 || lvl === 2;
+		}
+
+		function validatePasscode(pc) {
+			return /^\d{5}$/.test(pc);
+		}
+
+		function applyRoleRestrictionsToSelect(sel) {
+			if (!sel) return;
+			Array.from(sel.options).forEach(function (opt) {
+				if (isJunior() && (opt.value === "1" || opt.value === "2")) {
+					opt.disabled = true;
+				} else {
+					opt.disabled = false;
+				}
+			});
+
+			if (isJunior() && (sel.value === "1" || sel.value === "2")) {
+				sel.value = "3";
+			}
+		}
+
+		function updateCreatePasscodeRule() {
+			var lvl = parseInt(document.getElementById("level").value, 10);
+			var pass = document.getElementById("passcode");
+			if (!pass) return;
+
+			if (lvl === 5) {
+				pass.disabled = true;
+				pass.required = false;
+				pass.value = "";
+				pass.placeholder = "(not used for Basic)";
+			} else {
+				pass.disabled = false;
+				pass.required = true;
+				pass.placeholder = "•••••";
+			}
+		}
+
+		function hideEditCard() {
+			var card = document.getElementById("editCard");
+			if (!card) return;
+			card.style.display = "none";
+		}
+
+		function applyPermissionsToUi() {
+			applyRoleRestrictionsToSelect(document.getElementById("level"));
+			applyRoleRestrictionsToSelect(document.getElementById("editLevel"));
+			updateCreatePasscodeRule();
+
+			var addCard = document.querySelector('section[aria-label="Add person"]');
+			var canManage = canManageUsers();
+			if (addCard) addCard.style.display = canManage ? "block" : "none";
+			if (!canManage) hideEditCard();
+		}
+
+		async function refreshMe() {
+			var resp = await CAPUI.apiGet("/api/auth/me");
+			if (resp.ok && resp.data && resp.data.user) {
+				currentUser = resp.data.user;
+				CAPUI.setAuthUser(resp.data.user);
+				applyPermissionsToUi();
+				return;
+			}
+			if (resp.status === 401) {
+				currentUser = null;
+				CAPUI.clearAuthUser();
+				applyPermissionsToUi();
+			}
+		}
+
 		function renderUsers(users) {
 			var tbody = document.getElementById("peopleTableBody");
 			if (!tbody) return;
 			tbody.innerHTML = "";
 
 			if (!Array.isArray(users) || users.length === 0) {
-				tbody.innerHTML = '<tr><td colspan="3" class="muted">No users.</td></tr>';
+				tbody.innerHTML = '<tr><td colspan="4" class="muted">No users.</td></tr>';
 				return;
 			}
 
@@ -157,11 +293,36 @@
 				tr.appendChild(tdUid);
 
 				var tdRole = document.createElement("td");
-				var lvl = u.level ?? u.role ?? null;
-				if (lvl === 1 || lvl === "1" || String(lvl).toLowerCase() === "admin") tdRole.textContent = "Admin";
-				else if (lvl === 0 || lvl === "0" || String(lvl).toLowerCase() === "user") tdRole.textContent = "User";
-				else tdRole.textContent = safeText(lvl ?? "—");
+				tdRole.textContent = CAPUI.roleNameFromLevel(u.level ?? u.role ?? null);
 				tr.appendChild(tdRole);
+
+				var tdAct = document.createElement("td");
+				if (canManageUsers()) {
+					var act = document.createElement("div");
+					act.className = "actions";
+
+					var btn = document.createElement("button");
+					btn.type = "button";
+					btn.className = "btn ghost";
+					btn.textContent = "Edit";
+
+					var targetLvl = normalizeLevel(u.level);
+					var locked = isJunior() && (targetLvl === 1 || targetLvl === 2);
+					if (locked) {
+						btn.disabled = true;
+						btn.title = "Junior admins cannot modify Admin or Junior admin accounts.";
+					} else {
+						btn.addEventListener("click", function () {
+							openEditUser(u);
+						});
+					}
+
+					act.appendChild(btn);
+					tdAct.appendChild(act);
+				} else {
+					tdAct.textContent = "—";
+				}
+				tr.appendChild(tdAct);
 
 				tbody.appendChild(tr);
 			});
@@ -185,7 +346,7 @@
 			}
 
 			if (resp.status === 401 || resp.status === 403) {
-				showMsg("peopleMsg", "Not authorized for /api/users (admin required). Showing demo/local data.", "bad");
+				showMsg("peopleMsg", "Not authorized for /api/users. Please log in.", "bad");
 				return;
 			}
 
@@ -196,13 +357,14 @@
 			);
 		}
 
-		function validatePasscode(pc) {
-			return /^\d{5}$/.test(pc);
-		}
-
 		async function onCreatePerson(evt) {
 			evt.preventDefault();
 			hideMsg("addPersonMsg");
+
+			if (!canManageUsers()) {
+				showMsg("addPersonMsg", "You don't have permission to create users.", "bad");
+				return;
+			}
 
 			var username = (document.getElementById("username").value || "").trim();
 			var rfidUid = (document.getElementById("rfidUid").value || "").trim();
@@ -217,8 +379,13 @@
 				showMsg("addPersonMsg", "RFID UID is required.", "bad");
 				return;
 			}
-			if (!validatePasscode(passcode)) {
-				showMsg("addPersonMsg", "Passcode must be exactly 5 digits.", "bad");
+			if (isJunior() && (level === 1 || level === 2)) {
+				showMsg("addPersonMsg", "Junior admins cannot create or assign Admin/Junior admin roles.", "bad");
+				return;
+			}
+
+			if (level !== 5 && !validatePasscode(passcode)) {
+				showMsg("addPersonMsg", "Passcode must be exactly 5 digits (required for non-Basic users).", "bad");
 				return;
 			}
 
@@ -226,14 +393,21 @@
 				username: username,
 				rfid_uid: rfidUid,
 				level: level,
-				passcode: passcode,
 			};
+			if (level !== 5) {
+				payload.passcode = passcode;
+			}
 
 			var resp = await CAPUI.apiPost("/api/users", payload);
 			if (resp.ok) {
 				showMsg("addPersonMsg", "Person created via backend API.", "ok");
 				document.getElementById("passcode").value = "";
 				await loadUsers();
+				return;
+			}
+
+			if (resp.status === 401 || resp.status === 403) {
+				showMsg("addPersonMsg", "Not authorized to create users. Please log in as Admin/Junior admin.", "bad");
 				return;
 			}
 
@@ -244,16 +418,100 @@
 			showMsg(
 				"addPersonMsg",
 				"Backend not available (or rejected). Added locally for this session only. (Status: " + resp.status + ")",
-				resp.status === 401 || resp.status === 403 ? "bad" : "neutral"
+				"neutral"
 			);
 		}
 
 		function clearForm() {
 			document.getElementById("username").value = "";
 			document.getElementById("rfidUid").value = "";
-			document.getElementById("level").value = "0";
+			document.getElementById("level").value = "3";
 			document.getElementById("passcode").value = "";
 			hideMsg("addPersonMsg");
+			updateCreatePasscodeRule();
+		}
+
+		function openEditUser(userObj) {
+			hideMsg("editPersonMsg");
+			var card = document.getElementById("editCard");
+			if (!card) return;
+			card.style.display = "block";
+
+			document.getElementById("editHint").textContent = "Editing " + safeText(userObj.username) + ". Leave fields blank to keep unchanged.";
+			document.getElementById("editUsername").value = safeText(userObj.username);
+			document.getElementById("editRfidUid").value = "";
+			document.getElementById("editLevel").value = String(normalizeLevel(userObj.level));
+			document.getElementById("editPasscode").value = "";
+			document.getElementById("editClearPasscode").checked = false;
+
+			applyRoleRestrictionsToSelect(document.getElementById("editLevel"));
+			card.scrollIntoView({ behavior: "smooth", block: "start" });
+		}
+
+		async function onSaveEdit(evt) {
+			evt.preventDefault();
+			hideMsg("editPersonMsg");
+
+			if (!canManageUsers()) {
+				showMsg("editPersonMsg", "You don't have permission to edit users.", "bad");
+				return;
+			}
+
+			var username = (document.getElementById("editUsername").value || "").trim();
+			var newUid = (document.getElementById("editRfidUid").value || "").trim();
+			var newLevel = parseInt(document.getElementById("editLevel").value, 10);
+			var passcode = (document.getElementById("editPasscode").value || "").trim();
+			var clearPc = !!document.getElementById("editClearPasscode").checked;
+
+			var existing = null;
+			(localUsers || []).forEach(function (u) {
+				if (u && u.username === username) existing = u;
+			});
+			var targetLvl = existing ? normalizeLevel(existing.level) : 999;
+
+			if (isJunior()) {
+				if (targetLvl === 1 || targetLvl === 2) {
+					showMsg("editPersonMsg", "Junior admins cannot modify Admin or Junior admin accounts.", "bad");
+					return;
+				}
+				if (newLevel === 1 || newLevel === 2) {
+					showMsg("editPersonMsg", "Junior admins cannot assign Admin or Junior admin roles.", "bad");
+					return;
+				}
+			}
+
+			if (clearPc && passcode) {
+				showMsg("editPersonMsg", "Choose either a new passcode OR clear the passcode, not both.", "bad");
+				return;
+			}
+			if (passcode && !validatePasscode(passcode)) {
+				showMsg("editPersonMsg", "New passcode must be exactly 5 digits.", "bad");
+				return;
+			}
+
+			var patch = {};
+			if (newUid) patch.rfid_uid = newUid;
+			if (existing && normalizeLevel(existing.level) !== normalizeLevel(newLevel)) patch.level = newLevel;
+			if (!existing) patch.level = newLevel;
+			if (clearPc) patch.passcode = "";
+			else if (passcode) patch.passcode = passcode;
+
+			if (Object.keys(patch).length === 0) {
+				showMsg("editPersonMsg", "No changes to save.", "neutral");
+				return;
+			}
+
+			var resp = await CAPUI.apiJson("PATCH", "/api/users/" + encodeURIComponent(username), patch);
+			if (resp.ok) {
+				showMsg("editPersonMsg", "Saved.", "ok");
+				document.getElementById("editRfidUid").value = "";
+				document.getElementById("editPasscode").value = "";
+				document.getElementById("editClearPasscode").checked = false;
+				await loadUsers();
+				return;
+			}
+
+			showMsg("editPersonMsg", "Save failed (status " + resp.status + ").", resp.status === 401 || resp.status === 403 ? "bad" : "neutral");
 		}
 
 		CAPUI.markActiveNav();
@@ -264,8 +522,12 @@
 		document.getElementById("refreshBtn").addEventListener("click", loadUsers);
 		document.getElementById("addPersonForm").addEventListener("submit", onCreatePerson);
 		document.getElementById("clearFormBtn").addEventListener("click", clearForm);
+		document.getElementById("level").addEventListener("change", updateCreatePasscodeRule);
+		document.getElementById("editPersonForm").addEventListener("submit", onSaveEdit);
+		document.getElementById("cancelEditBtn").addEventListener("click", hideEditCard);
 
-		loadUsers();
+		applyPermissionsToUi();
+		refreshMe().then(loadUsers);
 	})();
 </script>
 

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAP Reporting System — Login</title>
+    <link rel="stylesheet" href="cap-ui.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="app-header">
+    <div class="title">
+        <h1>Civil Air Patrol Reporting System</h1>
+        <div class="subtitle">Login</div>
+    </div>
+    <div class="status" aria-label="Live status">
+        <div class="pill" title="WebSocket connection status">
+            <span id="wsDot" class="dot neutral" aria-hidden="true"></span>
+            <span>WS</span>
+            <span id="wsText">Disconnected</span>
+        </div>
+        <div class="pill" title="Authentication stage">
+            <span>Auth</span>
+            <span id="authText">—</span>
+        </div>
+        <div class="pill" title="Current role">
+            <span>Role</span>
+            <span id="roleText">—</span>
+        </div>
+        <div class="pill" title="Last update timestamp">
+            <span>Updated</span>
+            <span id="updatedText">—</span>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+    <aside class="sidebar">
+        <h2>Navigation</h2>
+        <nav class="nav" aria-label="Primary">
+            <a href="index.html">Dashboard</a>
+            <a href="people.html">People</a>
+            <a href="reports.html">Reports</a>
+            <a href="create_report.html">Create Report</a>
+            <a href="gpio.html">GPIO</a>
+            <a href="update.html">Update</a>
+            <a href="login.html">Login</a>
+        </nav>
+        <div class="note">
+            Login uses your <strong>5-digit passcode</strong> for the selected username.
+            Basic users (name-only) cannot log in.
+        </div>
+    </aside>
+
+    <main class="main" id="main">
+        <section class="card" aria-label="Login">
+            <h2>Login</h2>
+            <p class="muted" style="margin-top:0">
+                This creates a temporary session token stored in your browser.
+            </p>
+
+            <div id="msg" class="alert neutral" style="display:none"></div>
+
+            <form id="loginForm">
+                <label for="username">Username</label>
+                <input id="username" name="username" autocomplete="off" placeholder="jdoe" required>
+
+                <label for="passcode">Passcode</label>
+                <input id="passcode" name="passcode" type="password" inputmode="numeric" pattern="\d{5}" placeholder="•••••" required>
+                <div class="help">Exactly 5 digits.</div>
+
+                <div class="actions">
+                    <button class="btn" type="submit">Login</button>
+                    <button class="btn secondary" id="whoamiBtn" type="button">Who am I?</button>
+                    <button class="btn ghost" id="logoutBtn" type="button">Logout</button>
+                </div>
+            </form>
+
+            <div class="card" style="margin-top:16px; margin-bottom:0">
+                <h2 style="font-size:16px; margin-bottom:8px">Current session</h2>
+                <table class="table" aria-label="Session info">
+                    <tbody>
+                    <tr><th style="text-align:left; width:160px">User</th><td id="whoUser">—</td></tr>
+                    <tr><th style="text-align:left">Role</th><td id="whoRole">—</td></tr>
+                    </tbody>
+                </table>
+                <div class="actions" style="margin-top:12px">
+                    <a class="btn secondary" href="reports.html">Go to Reports</a>
+                    <a class="btn ghost" href="create_report.html">Create report</a>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script src="cap-ui.js"></script>
+<script>
+    (function () {
+        "use strict";
+
+        function showMsg(text, kind) {
+            var el = document.getElementById("msg");
+            if (!el) return;
+            el.style.display = "block";
+            el.classList.remove("ok", "bad", "neutral");
+            el.classList.add(kind || "neutral");
+            el.textContent = text;
+        }
+
+        function hideMsg() {
+            var el = document.getElementById("msg");
+            if (!el) return;
+            el.style.display = "none";
+        }
+
+        function setWho(user) {
+            var u = user || CAPUI.getAuthUser();
+            if (!u) {
+                document.getElementById("whoUser").textContent = "—";
+                document.getElementById("whoRole").textContent = "—";
+                return;
+            }
+            document.getElementById("whoUser").textContent = u.username || "—";
+            document.getElementById("whoRole").textContent = CAPUI.roleNameFromLevel(u.level);
+        }
+
+        async function whoami() {
+            hideMsg();
+            var resp = await CAPUI.apiGet("/api/auth/me");
+            if (resp.ok && resp.data && resp.data.user) {
+                CAPUI.setAuthUser(resp.data.user);
+                showMsg("Session is valid.", "ok");
+                setWho(resp.data.user);
+                return;
+            }
+            if (resp.status === 401) {
+                showMsg("Not logged in (or session expired).", "bad");
+                setWho(null);
+                return;
+            }
+            showMsg("Could not check session (status " + resp.status + ").", "neutral");
+        }
+
+        function validatePasscode(pc) {
+            return /^\d{5}$/.test(pc);
+        }
+
+        async function onLogin(evt) {
+            evt.preventDefault();
+            hideMsg();
+
+            var username = (document.getElementById("username").value || "").trim();
+            var passcode = (document.getElementById("passcode").value || "").trim();
+
+            if (!username) {
+                showMsg("Username is required.", "bad");
+                return;
+            }
+            if (!validatePasscode(passcode)) {
+                showMsg("Passcode must be exactly 5 digits.", "bad");
+                return;
+            }
+
+            // Use a direct call so we don't depend on any existing session.
+            var base = CAPUI.defaultApiBase();
+            var resp;
+            try {
+                var r = await fetch(base + "/api/auth/login", {
+                    method: "POST",
+                    headers: {
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ username: username, passcode: passcode }),
+                });
+                var text = await r.text();
+                var data = null;
+                try { data = text ? JSON.parse(text) : null; } catch (_e) { data = text; }
+                resp = { ok: r.ok, status: r.status, data: data };
+            } catch (e) {
+                resp = { ok: false, status: 0, data: null, error: (e && e.message) ? e.message : String(e) };
+            }
+
+            if (resp.ok && resp.data && resp.data.token && resp.data.user) {
+                CAPUI.setAuthToken(resp.data.token);
+                CAPUI.setAuthUser(resp.data.user);
+                document.getElementById("passcode").value = "";
+                showMsg("Logged in as " + resp.data.user.username + " (" + CAPUI.roleNameFromLevel(resp.data.user.level) + ").", "ok");
+                setWho(resp.data.user);
+                return;
+            }
+
+            var err = (resp.data && resp.data.error) ? resp.data.error : (resp.error || "Login failed.");
+            showMsg(err + " (status " + resp.status + ")", "bad");
+        }
+
+        async function logout() {
+            hideMsg();
+
+            // Best-effort API logout.
+            await CAPUI.apiPost("/api/auth/logout", {});
+
+            CAPUI.clearAuthToken();
+            CAPUI.clearAuthUser();
+            setWho(null);
+            showMsg("Logged out.", "neutral");
+        }
+
+        CAPUI.markActiveNav();
+        CAPUI.connectLiveState(function (state) {
+            CAPUI.applyLiveStateToCommonBadges(state);
+        });
+
+        document.getElementById("loginForm").addEventListener("submit", onLogin);
+        document.getElementById("whoamiBtn").addEventListener("click", whoami);
+        document.getElementById("logoutBtn").addEventListener("click", logout);
+
+        setWho(null);
+        whoami();
+    })();
+</script>
+
+</body>
+</html>

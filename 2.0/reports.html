@@ -45,6 +45,8 @@
 			<a href="reports.html">Reports</a>
 			<a href="create_report.html">Create Report</a>
 			<a href="gpio.html">GPIO</a>
+			<a href="update.html">Update</a>
+			<a href="login.html">Login</a>
 		</nav>
 		<div class="note">
 			Visible reports depend on permissions.
@@ -231,12 +233,23 @@
 				tr.appendChild(tdStatus);
 
 				var tdAct = document.createElement("td");
-				var btn = document.createElement("button");
-				btn.type = "button";
-				btn.className = "btn ghost";
-				btn.textContent = "View";
-				btn.addEventListener("click", function () { viewReportDetails(r); });
-				tdAct.appendChild(btn);
+					var act = document.createElement("div");
+					act.className = "actions";
+
+					var review = document.createElement("a");
+					review.className = "btn ghost";
+					review.textContent = "Review";
+					review.href = "report.html?num=" + encodeURIComponent(reportNum(r));
+					act.appendChild(review);
+
+					var btn = document.createElement("button");
+					btn.type = "button";
+					btn.className = "btn secondary";
+					btn.textContent = "JSON";
+					btn.addEventListener("click", function () { viewReportDetails(r); });
+					act.appendChild(btn);
+
+					tdAct.appendChild(act);
 				tr.appendChild(tdAct);
 
 				tbody.appendChild(tr);

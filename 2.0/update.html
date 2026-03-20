@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAP Reporting System — Update</title>
+    <link rel="stylesheet" href="cap-ui.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="app-header">
+    <div class="title">
+        <h1>Civil Air Patrol Reporting System</h1>
+        <div class="subtitle">System update</div>
+    </div>
+    <div class="status" aria-label="Live status">
+        <div class="pill" title="WebSocket connection status">
+            <span id="wsDot" class="dot neutral" aria-hidden="true"></span>
+            <span>WS</span>
+            <span id="wsText">Disconnected</span>
+        </div>
+        <div class="pill" title="Authentication stage">
+            <span>Auth</span>
+            <span id="authText">—</span>
+        </div>
+        <div class="pill" title="Current role">
+            <span>Role</span>
+            <span id="roleText">—</span>
+        </div>
+        <div class="pill" title="Last update timestamp">
+            <span>Updated</span>
+            <span id="updatedText">—</span>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+    <aside class="sidebar">
+        <h2>Navigation</h2>
+        <nav class="nav" aria-label="Primary">
+            <a href="index.html">Dashboard</a>
+            <a href="people.html">People</a>
+            <a href="reports.html">Reports</a>
+            <a href="create_report.html">Create Report</a>
+            <a href="gpio.html">GPIO</a>
+            <a href="update.html">Update</a>
+            <a href="login.html">Login</a>
+        </nav>
+        <div class="note">
+            <strong>Danger zone:</strong> this runs <code>git pull</code> and <code>make build</code> on the device.
+            Update endpoints require <code>CAP_CDTS_ADMIN_TOKEN</code> and an <code>X-Admin-Token</code> header.
+        </div>
+    </aside>
+
+    <main class="main" id="main">
+        <section class="card" aria-label="System update">
+            <h2>System update</h2>
+            <p class="muted" style="margin-top:0">
+                Press <strong>Run update</strong> to pull the GitHub repo and build in the background.
+                When the build completes on Linux, the backend will swap in <code>bin/cap-cdts-backend.new</code>
+                and (optionally) restart into the new build.
+            </p>
+
+            <div id="msg" class="alert neutral" style="display:none"></div>
+
+            <div class="grid cols-2" style="align-items:start">
+                <div class="card" style="margin-bottom:0">
+                    <h2 style="font-size:16px; margin-bottom:8px">Admin token</h2>
+                    <label for="token">X-Admin-Token</label>
+                    <input id="token" type="password" autocomplete="off" placeholder="Enter admin token" />
+                    <div class="help">Stored in your browser <code>localStorage</code> as <code>cap_cdts_admin_token</code>.</div>
+                    <div class="actions" style="margin-top:12px">
+                        <button class="btn secondary" id="saveTokenBtn" type="button">Save token</button>
+                        <button class="btn ghost" id="clearTokenBtn" type="button">Clear</button>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom:0">
+                    <h2 style="font-size:16px; margin-bottom:8px">Controls</h2>
+                    <div class="actions">
+                        <button class="btn" id="runBtn" type="button">Run update</button>
+                        <button class="btn secondary" id="refreshBtn" type="button">Refresh status</button>
+                    </div>
+                    <div class="help">If the server restarts after updating, this page may briefly show “offline” while it comes back up.</div>
+                </div>
+            </div>
+
+            <div class="grid cols-2" style="align-items:start">
+                <div class="card" style="margin-bottom:0">
+                    <h2 style="font-size:16px; margin-bottom:8px">Status</h2>
+                    <table class="table" aria-label="Update status">
+                        <tbody>
+                        <tr><th style="text-align:left; width:160px">Enabled</th><td id="enabledText">—</td></tr>
+                        <tr><th style="text-align:left">State</th><td id="stateText">—</td></tr>
+                        <tr><th style="text-align:left">Step</th><td id="stepText">—</td></tr>
+                        <tr><th style="text-align:left">Started</th><td id="startedText">—</td></tr>
+                        <tr><th style="text-align:left">Finished</th><td id="finishedText">—</td></tr>
+                        <tr><th style="text-align:left">Error</th><td id="errorText">—</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card" style="margin-bottom:0">
+                    <h2 style="font-size:16px; margin-bottom:8px">Paths</h2>
+                    <table class="table" aria-label="Update paths">
+                        <tbody>
+                        <tr><th style="text-align:left; width:160px">Repo dir</th><td id="repoText">—</td></tr>
+                        <tr><th style="text-align:left">Live bin</th><td id="liveText">—</td></tr>
+                        <tr><th style="text-align:left">New bin</th><td id="newText">—</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card" style="margin-bottom:0">
+                <h2 style="font-size:16px; margin-bottom:8px">Log (tail)</h2>
+                <pre id="log" style="white-space:pre-wrap; margin:0; background:rgba(0,0,0,0.04); padding:12px; border-radius:10px; border:1px solid rgba(0,0,0,0.08); max-height:360px; overflow:auto;"></pre>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script src="cap-ui.js"></script>
+<script>
+    (function () {
+        "use strict";
+
+        var LS_KEY = "cap_cdts_admin_token";
+        var pollTimer = null;
+
+        function showMsg(text, kind) {
+            var el = document.getElementById("msg");
+            if (!el) return;
+            el.style.display = "block";
+            el.classList.remove("ok", "bad", "neutral");
+            el.classList.add(kind || "neutral");
+            el.textContent = text;
+        }
+
+        function hideMsg() {
+            var el = document.getElementById("msg");
+            if (!el) return;
+            el.style.display = "none";
+        }
+
+        function safe(v) {
+            if (v === null || v === undefined) return "—";
+            var s = String(v);
+            return s.trim() ? s : "—";
+        }
+
+        function getToken() {
+            try {
+                return (localStorage.getItem(LS_KEY) || "").trim();
+            } catch (_e) {
+                return "";
+            }
+        }
+
+        function setToken(v) {
+            try {
+                localStorage.setItem(LS_KEY, (v || "").trim());
+            } catch (_e) {}
+        }
+
+        async function apiJson(method, path, body) {
+            var base = CAPUI.defaultApiBase();
+            var url = base + path;
+
+            var headers = {
+                "Accept": "application/json",
+            };
+
+            var token = getToken();
+            if (token) headers["X-Admin-Token"] = token;
+
+            var init = { method: method, headers: headers };
+            if (body !== undefined) {
+                init.headers["Content-Type"] = "application/json";
+                init.body = JSON.stringify(body);
+            }
+
+            try {
+                var resp = await fetch(url, init);
+                var text = await resp.text();
+                var data = null;
+                try { data = text ? JSON.parse(text) : null; } catch (_e) { data = text; }
+                return { ok: resp.ok, status: resp.status, data: data };
+            } catch (e) {
+                return { ok: false, status: 0, data: null, error: (e && e.message) ? e.message : String(e) };
+            }
+        }
+
+        function applyStatus(payload) {
+            payload = payload || {};
+            var s = payload.status || payload;
+
+            document.getElementById("enabledText").textContent = safe(s.enabled);
+            document.getElementById("stateText").textContent = safe(s.state);
+            document.getElementById("stepText").textContent = safe(s.step);
+            document.getElementById("startedText").textContent = safe(s.started_at_utc);
+            document.getElementById("finishedText").textContent = safe(s.finished_at_utc);
+            document.getElementById("errorText").textContent = safe(s.error);
+
+            document.getElementById("repoText").textContent = safe(payload.repo_dir);
+            document.getElementById("liveText").textContent = safe(payload.live_bin);
+            document.getElementById("newText").textContent = safe(payload.new_bin);
+
+            var log = Array.isArray(payload.log_tail) ? payload.log_tail.join("\n") : "";
+            document.getElementById("log").textContent = log;
+        }
+
+        async function loadStatus() {
+            var resp = await apiJson("GET", "/api/update/status");
+
+            if (resp.ok) {
+                hideMsg();
+                applyStatus(resp.data);
+
+                var s = resp.data && (resp.data.status || resp.data);
+                if (s && (s.state === "running" || s.state === "restarting")) {
+                    ensurePolling(true);
+                } else {
+                    ensurePolling(false);
+                }
+
+                return;
+            }
+
+            // Common auth/config errors
+            if (resp.status === 401 || resp.status === 403) {
+                showMsg("Update endpoints require a valid admin token.", "bad");
+                ensurePolling(false);
+                return;
+            }
+
+            if (resp.status === 503) {
+                showMsg("Update endpoints are disabled (set CAP_CDTS_ADMIN_TOKEN / CAP_CDTS_UPDATE_ENABLED).", "bad");
+                ensurePolling(false);
+                return;
+            }
+
+            // When restarting, fetch will fail briefly.
+            showMsg("Server unavailable (restarting?). Retrying…", "neutral");
+            ensurePolling(true);
+        }
+
+        function ensurePolling(on) {
+            if (on) {
+                if (pollTimer) return;
+                pollTimer = setInterval(loadStatus, 1200);
+                return;
+            }
+
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
+
+        async function startUpdate() {
+            showMsg("Starting update…", "neutral");
+            var resp = await apiJson("POST", "/api/update/start");
+            if (resp.ok) {
+                showMsg("Update started. Watching status…", "ok");
+                applyStatus(resp.data);
+                ensurePolling(true);
+                return;
+            }
+
+            if (resp.status === 409) {
+                showMsg("An update is already running.", "neutral");
+                ensurePolling(true);
+                return;
+            }
+
+            if (resp.status === 401 || resp.status === 403) {
+                showMsg("Update requires a valid admin token.", "bad");
+                ensurePolling(false);
+                return;
+            }
+
+            if (resp.status === 503) {
+                showMsg("Update endpoints are disabled on the backend.", "bad");
+                ensurePolling(false);
+                return;
+            }
+
+            var err = (resp.data && resp.data.error) ? resp.data.error : (resp.error || "Update failed.");
+            showMsg(err, "bad");
+            ensurePolling(false);
+        }
+
+        function initTokenUi() {
+            var tokenInput = document.getElementById("token");
+            tokenInput.value = getToken();
+
+            document.getElementById("saveTokenBtn").addEventListener("click", function () {
+                setToken(tokenInput.value);
+                showMsg("Token saved.", "ok");
+            });
+
+            document.getElementById("clearTokenBtn").addEventListener("click", function () {
+                tokenInput.value = "";
+                setToken("");
+                showMsg("Token cleared.", "neutral");
+            });
+        }
+
+        CAPUI.markActiveNav();
+        CAPUI.connectLiveState(function (state) {
+            CAPUI.applyLiveStateToCommonBadges(state);
+        });
+
+        initTokenUi();
+
+        document.getElementById("runBtn").addEventListener("click", startUpdate);
+        document.getElementById("refreshBtn").addEventListener("click", loadStatus);
+
+        loadStatus();
+    })();
+</script>
+
+</body>
+</html>

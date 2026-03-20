@@ -1,9 +1,20 @@
 /target
 
+# Build artifacts (Makefile output)
+/bin
+
 # JSON store
 /data/store.json
 /data/store.json.tmp
 /data/store.json.bak
+
+# Update status/logs (written at runtime)
+/data/update_state.json
+/data/update_state.json.tmp
+/data/update.log
+
+# Local environment file (do not commit secrets)
+.env
 
 # Editor cruft
 .vscode/

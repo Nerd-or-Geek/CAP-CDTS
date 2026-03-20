@@ -4,8 +4,8 @@ use anyhow::Context;
 use tokio::sync::{watch, RwLock};
 
 use crate::models::{
-    AuthLive, CreateReportRequest, CreateUserRequest, GpioConfig, LiveCounts, LiveState, ReportRecord,
-    StoreData, UserPublic, UserRecord,
+    normalize_level, AuthLive, CreateReportRequest, CreateUserRequest, GpioConfig, LiveCounts, LiveState,
+    ReportRecord, StoreData, UpdateReportRequest, UpdateUserRequest, UserPublic, UserRecord, LEVEL_BASIC,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -143,29 +143,59 @@ impl JsonStore {
         out
     }
 
+    pub async fn get_user_record(&self, username: &str) -> Option<UserRecord> {
+        let data = self.data.read().await;
+        data.users
+            .iter()
+            .find(|u| u.username.eq_ignore_ascii_case(username.trim()))
+            .cloned()
+    }
+
     pub async fn create_user(&self, req: CreateUserRequest) -> Result<UserPublic, StoreError> {
         let username = req.username.trim();
         if username.is_empty() {
             return Err(StoreError::bad_request("username is required"));
         }
 
-        if !(req.level == 0 || req.level == 1) {
-            return Err(StoreError::bad_request("level must be 0 (user) or 1 (admin)"));
+        // Validate level. Legacy level=0 is accepted and normalized.
+        match req.level {
+            0 | 1 | 2 | 3 | 4 | 5 => {}
+            _ => {
+                return Err(StoreError::bad_request(
+                    "level must be 1 (admin), 2 (junior admin), 3 (moderator), 4 (advanced user), or 5 (basic)",
+                ))
+            }
         }
 
-        let passcode_hash = match req.passcode.as_deref() {
-            None => None,
-            Some(pc) if pc.trim().is_empty() => None,
-            Some(pc) => {
-                let pc = pc.trim();
-                if !is_five_digit_passcode(pc) {
-                    return Err(StoreError::bad_request("passcode must be exactly 5 digits"));
-                }
+        let level = normalize_level(req.level);
 
-                Some(
-                    hash_passcode(pc)
-                        .map_err(|e| StoreError::internal(format!("failed to hash passcode: {e}")))?,
-                )
+        let passcode_hash = if level == LEVEL_BASIC {
+            // Basic users are name-only; they should not have a passcode.
+            None
+        } else {
+            match req.passcode.as_deref() {
+                None => {
+                    return Err(StoreError::bad_request(
+                        "passcode is required for non-basic users (exactly 5 digits)",
+                    ))
+                }
+                Some(pc) if pc.trim().is_empty() => {
+                    return Err(StoreError::bad_request(
+                        "passcode is required for non-basic users (exactly 5 digits)",
+                    ))
+                }
+                Some(pc) => {
+                    let pc = pc.trim();
+                    if !is_five_digit_passcode(pc) {
+                        return Err(StoreError::bad_request("passcode must be exactly 5 digits"));
+                    }
+
+                    Some(
+                        hash_passcode(pc).map_err(|e| {
+                            StoreError::internal(format!("failed to hash passcode: {e}"))
+                        })?,
+                    )
+                }
             }
         };
 
@@ -182,7 +212,7 @@ impl JsonStore {
         let user = UserRecord {
             username: username.to_string(),
             rfid_uid: req.rfid_uid.trim().to_string(),
-            level: req.level,
+            level,
             passcode_hash,
             created_at_utc: now_rfc3339(),
         };
@@ -200,6 +230,78 @@ impl JsonStore {
         Ok(UserPublic::from(&user))
     }
 
+    pub async fn update_user(
+        &self,
+        username: &str,
+        req: UpdateUserRequest,
+    ) -> Result<Option<UserPublic>, StoreError> {
+        let username = username.trim();
+        if username.is_empty() {
+            return Err(StoreError::bad_request("username is required"));
+        }
+
+        // Validate level (if provided).
+        if let Some(lvl) = req.level {
+            match lvl {
+                0 | 1 | 2 | 3 | 4 | 5 => {}
+                _ => {
+                    return Err(StoreError::bad_request(
+                        "level must be 1 (admin), 2 (junior admin), 3 (moderator), 4 (advanced user), or 5 (basic)",
+                    ))
+                }
+            }
+        }
+
+        let mut data = self.data.write().await;
+        let Some(u) = data
+            .users
+            .iter_mut()
+            .find(|u| u.username.eq_ignore_ascii_case(username))
+        else {
+            return Ok(None);
+        };
+
+        if let Some(rfid) = req.rfid_uid {
+            u.rfid_uid = rfid.trim().to_string();
+        }
+
+        if let Some(lvl) = req.level {
+            u.level = normalize_level(lvl);
+        }
+
+        // Passcode update logic.
+        // - If empty string => clear passcode
+        // - If set => must be 5 digits
+        // - If target level is BASIC => passcode is always cleared
+        if u.level == LEVEL_BASIC {
+            u.passcode_hash = None;
+        } else if let Some(pc) = req.passcode {
+            let pc = pc.trim().to_string();
+            if pc.is_empty() {
+                u.passcode_hash = None;
+            } else {
+                if !is_five_digit_passcode(&pc) {
+                    return Err(StoreError::bad_request("passcode must be exactly 5 digits"));
+                }
+                u.passcode_hash = Some(
+                    hash_passcode(&pc)
+                        .map_err(|e| StoreError::internal(format!("failed to hash passcode: {e}")))?,
+                );
+            }
+        }
+
+        let updated = UserPublic::from(&*u);
+
+        let live = compute_live_state(&data);
+        if let Err(e) = self.persist_locked(&data).await {
+            return Err(StoreError::internal(format!("failed to persist store: {e}")));
+        }
+        drop(data);
+
+        let _ = self.live_tx.send(live);
+        Ok(Some(updated))
+    }
+
     pub async fn list_reports(&self) -> Vec<ReportRecord> {
         let data = self.data.read().await;
         let mut out = data.reports.clone();
@@ -207,7 +309,12 @@ impl JsonStore {
         out
     }
 
-    pub async fn create_report(&self, req: CreateReportRequest) -> Result<ReportRecord, StoreError> {
+    pub async fn create_report(
+        &self,
+        actor_username: &str,
+        actor_level: i32,
+        req: CreateReportRequest,
+    ) -> Result<ReportRecord, StoreError> {
         if req.person.trim().is_empty() {
             return Err(StoreError::bad_request("person is required"));
         }
@@ -226,13 +333,8 @@ impl JsonStore {
         let report = ReportRecord {
             num,
             created_at_utc: now,
-            opened_by: req
-                .opened_by
-                .as_deref()
-                .unwrap_or("web")
-                .trim()
-                .to_string(),
-            opened_by_level: None,
+            opened_by: actor_username.trim().to_string(),
+            opened_by_level: Some(actor_level),
             closed_by: None,
             closed_at_utc: None,
             closing_comments: None,
@@ -254,6 +356,76 @@ impl JsonStore {
         let _ = self.live_tx.send(live);
 
         Ok(report)
+    }
+
+    pub async fn update_report(
+        &self,
+        num: u32,
+        req: UpdateReportRequest,
+        actor_username: &str,
+    ) -> Result<Option<ReportRecord>, StoreError> {
+        let mut data = self.data.write().await;
+        let Some(r) = data.reports.iter_mut().find(|r| r.num == num) else {
+            return Ok(None);
+        };
+
+        // Editable fields
+        if let Some(v) = req.person {
+            let v = v.trim();
+            if v.is_empty() {
+                return Err(StoreError::bad_request("person is required"));
+            }
+            r.person = v.to_string();
+        }
+
+        if let Some(v) = req.title {
+            let v = v.trim();
+            if v.is_empty() {
+                return Err(StoreError::bad_request("title is required"));
+            }
+            r.title = v.to_string();
+        }
+
+        if let Some(v) = req.category {
+            r.category = v.trim().to_string();
+        }
+
+        if let Some(v) = req.priority {
+            r.priority = v.trim().to_string();
+        }
+
+        if let Some(v) = req.description {
+            let v = v.trim();
+            if v.is_empty() {
+                return Err(StoreError::bad_request("description is required"));
+            }
+            r.description = v.to_string();
+        }
+
+        // Close/reopen
+        if let Some(closed) = req.closed {
+            if closed {
+                r.closed_by = Some(actor_username.trim().to_string());
+                r.closed_at_utc = Some(now_rfc3339());
+                let cc = req.closing_comments.map(|s| s.trim().to_string());
+                r.closing_comments = cc.and_then(|s| if s.is_empty() { None } else { Some(s) });
+            } else {
+                r.closed_by = None;
+                r.closed_at_utc = None;
+                r.closing_comments = None;
+            }
+        }
+
+        let updated = r.clone();
+
+        let live = compute_live_state(&data);
+        if let Err(e) = self.persist_locked(&data).await {
+            return Err(StoreError::internal(format!("failed to persist store: {e}")));
+        }
+        drop(data);
+
+        let _ = self.live_tx.send(live);
+        Ok(Some(updated))
     }
 
     pub async fn get_report(&self, num: u32) -> Option<ReportRecord> {
@@ -297,6 +469,11 @@ fn normalize_store(d: &mut StoreData) {
 
     if d.next_report_num < 100_000 || d.next_report_num > 999_999 {
         d.next_report_num = 100_000;
+    }
+
+    // Normalize user levels for backward compatibility.
+    for u in &mut d.users {
+        u.level = normalize_level(u.level);
     }
 }
 

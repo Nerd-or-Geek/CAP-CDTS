@@ -1,0 +1,26 @@
+# Example systemd unit for CAP-CDTS
+#
+# Adjust paths and user/group as needed.
+
+[Unit]
+Description=CAP-CDTS backend (Axum)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=capcdts
+Group=capcdts
+WorkingDirectory=/opt/cap-cdts/app
+EnvironmentFile=/opt/cap-cdts/app/.env
+ExecStart=/opt/cap-cdts/app/bin/cap-cdts-backend
+
+# Keep it running; update flow relies on a restart after swapping binaries.
+Restart=always
+RestartSec=2
+
+# Give the app a little time to flush/persist.
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

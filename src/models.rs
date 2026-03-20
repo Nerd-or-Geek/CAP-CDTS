@@ -1,5 +1,43 @@
 use serde::{Deserialize, Serialize};
 
+// User permission levels (lower number = more privilege)
+//
+// Requested model:
+//  1 = Admin
+//  2 = Junior admin
+//  3 = Moderator
+//  4 = Advanced user
+//  5 = Basic (name only; no login)
+pub const LEVEL_ADMIN: i32 = 1;
+pub const LEVEL_JUNIOR_ADMIN: i32 = 2;
+pub const LEVEL_MODERATOR: i32 = 3;
+pub const LEVEL_ADVANCED_USER: i32 = 4;
+pub const LEVEL_BASIC: i32 = 5;
+
+pub fn normalize_level(level: i32) -> i32 {
+    match level {
+        LEVEL_ADMIN => LEVEL_ADMIN,
+        LEVEL_JUNIOR_ADMIN => LEVEL_JUNIOR_ADMIN,
+        LEVEL_MODERATOR => LEVEL_MODERATOR,
+        LEVEL_ADVANCED_USER => LEVEL_ADVANCED_USER,
+        LEVEL_BASIC => LEVEL_BASIC,
+        // Legacy: older builds used 0 for a generic "user".
+        0 => LEVEL_MODERATOR,
+        _ => LEVEL_BASIC,
+    }
+}
+
+pub fn level_name(level: i32) -> &'static str {
+    match normalize_level(level) {
+        LEVEL_ADMIN => "Admin",
+        LEVEL_JUNIOR_ADMIN => "Junior admin",
+        LEVEL_MODERATOR => "Moderator",
+        LEVEL_ADVANCED_USER => "Advanced user",
+        LEVEL_BASIC => "Basic",
+        _ => "Basic",
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct ApiStatus {
     pub status: &'static str,
@@ -44,6 +82,33 @@ pub struct CreateUserRequest {
     pub passcode: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct UpdateUserRequest {
+    pub rfid_uid: Option<String>,
+    pub level: Option<i32>,
+
+    // If present, must be exactly 5 digits (or empty string to clear).
+    pub passcode: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub passcode: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct LoginResponse {
+    pub token: String,
+    pub user: UserPublic,
+    pub expires_at_utc: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MeResponse {
+    pub user: UserPublic,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReportRecord {
     pub num: u32,
@@ -75,6 +140,25 @@ pub struct CreateReportRequest {
 
     // Optional: some UIs include this for better attribution.
     pub opened_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct UpdateReportRequest {
+    // Editable fields (admin/junior admin only)
+    pub person: Option<String>,
+    pub title: Option<String>,
+    pub category: Option<String>,
+    pub priority: Option<String>,
+    pub description: Option<String>,
+
+    // Status change:
+    // - Some(true)  => close the report
+    // - Some(false) => reopen the report
+    // - None        => leave status unchanged
+    pub closed: Option<bool>,
+
+    // Optional closing notes (stored only when closing).
+    pub closing_comments: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

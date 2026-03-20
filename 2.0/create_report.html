@@ -45,10 +45,12 @@
 			<a href="reports.html">Reports</a>
 			<a href="create_report.html">Create Report</a>
 			<a href="gpio.html">GPIO</a>
+			<a href="update.html">Update</a>
+			<a href="login.html">Login</a>
 		</nav>
 		<div class="note">
-			Typically admin-only. The UI will try <code>POST /api/reports</code>.
-			If unavailable, it will create a local demo report for this browser session.
+			Login is required for the backend API (<code>POST /api/reports</code>).
+			If the backend is offline, the UI can create a local demo report for this browser session.
 		</div>
 	</aside>
 
@@ -131,6 +133,28 @@
 		"use strict";
 
 		var currentAuthUser = null;
+
+		function syncAuthFromLocal() {
+			try {
+				var u = CAPUI.getAuthUser();
+				currentAuthUser = u && u.username ? u.username : null;
+			} catch (_e) {
+				currentAuthUser = null;
+			}
+		}
+
+		async function refreshMe() {
+			var resp = await CAPUI.apiGet("/api/auth/me");
+			if (resp.ok && resp.data && resp.data.user) {
+				CAPUI.setAuthUser(resp.data.user);
+				syncAuthFromLocal();
+				return;
+			}
+			if (resp.status === 401) {
+				CAPUI.clearAuthUser();
+				syncAuthFromLocal();
+			}
+		}
 
 		function showMsg(text, kind) {
 			var el = document.getElementById("createMsg");
@@ -247,6 +271,11 @@
 				return;
 			}
 
+			if (resp.status === 401 || resp.status === 403) {
+				showMsg("Not authorized to create reports. Please log in.", "bad");
+				return;
+			}
+
 			// Offline/demo: create a local session report.
 			var localNum = randomReportNum();
 			var nowIso = new Date().toISOString();
@@ -266,8 +295,7 @@
 			};
 			CAPUI.addSessionReport(localReport);
 
-			var kind = (resp.status === 401 || resp.status === 403) ? "bad" : "neutral";
-			showMsg("Backend rejected or unavailable (status " + resp.status + "). Saved as local demo report.", kind);
+			showMsg("Backend rejected or unavailable (status " + resp.status + "). Saved as local demo report.", "neutral");
 			showResult(localNum, "Stored locally in this browser session (sessionStorage)." );
 		}
 
@@ -283,16 +311,14 @@
 		CAPUI.markActiveNav();
 		CAPUI.connectLiveState(function (state) {
 			CAPUI.applyLiveStateToCommonBadges(state);
-			try {
-				currentAuthUser = state && state.auth && state.auth.user ? (state.auth.user.username || null) : null;
-			} catch (_e) {
-				currentAuthUser = null;
-			}
+			syncAuthFromLocal();
 		});
 
 		document.getElementById("createReportForm").addEventListener("submit", onSubmit);
 		document.getElementById("clearBtn").addEventListener("click", clearForm);
 
+		syncAuthFromLocal();
+		refreshMe();
 		loadPeopleOptions();
 	})();
 </script>

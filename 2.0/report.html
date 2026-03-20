@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>CAP Reporting System — Report</title>
+	<link rel="stylesheet" href="cap-ui.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="app-header">
+	<div class="title">
+		<h1>Civil Air Patrol Reporting System</h1>
+		<div class="subtitle">Report review</div>
+	</div>
+	<div class="status" aria-label="Live status">
+		<div class="pill" title="WebSocket connection status">
+			<span id="wsDot" class="dot neutral" aria-hidden="true"></span>
+			<span>WS</span>
+			<span id="wsText">Disconnected</span>
+		</div>
+		<div class="pill" title="Authentication stage">
+			<span>Auth</span>
+			<span id="authText">—</span>
+		</div>
+		<div class="pill" title="Current role">
+			<span>Role</span>
+			<span id="roleText">—</span>
+		</div>
+		<div class="pill" title="Last update timestamp">
+			<span>Updated</span>
+			<span id="updatedText">—</span>
+		</div>
+	</div>
+</header>
+
+<div class="container">
+	<aside class="sidebar">
+		<h2>Navigation</h2>
+		<nav class="nav" aria-label="Primary">
+			<a href="index.html">Dashboard</a>
+			<a href="people.html">People</a>
+			<a href="reports.html">Reports</a>
+			<a href="create_report.html">Create Report</a>
+			<a href="gpio.html">GPIO</a>
+			<a href="update.html">Update</a>
+			<a href="login.html">Login</a>
+		</nav>
+		<div class="note">
+			This screen loads a single report via <code>GET /api/reports/:num</code>.
+			Edits/close/delete require Admin or Junior admin.
+		</div>
+	</aside>
+
+	<main class="main" id="main">
+		<section class="card" aria-label="Report header">
+			<h2 id="reportTitle">Report</h2>
+			<p class="muted" id="reportSub">—</p>
+
+			<div id="topMsg" class="alert neutral" style="display:none"></div>
+
+			<div class="actions">
+				<a class="btn secondary" href="reports.html">Back to Reports</a>
+				<button class="btn secondary" id="reloadBtn" type="button">Reload</button>
+				<a class="btn ghost" id="rawJsonBtn" href="#json">Raw JSON</a>
+			</div>
+		</section>
+
+		<section class="card" aria-label="Report fields">
+			<h2>Details</h2>
+			<p class="muted" id="editHint">—</p>
+
+			<form id="editForm">
+				<div class="grid cols-2">
+					<div>
+						<label for="person">Person</label>
+						<input id="person" name="person" autocomplete="off" placeholder="jdoe" required>
+					</div>
+					<div>
+						<label for="category">Category</label>
+						<select id="category" name="category" required>
+							<option value="Incident">Incident</option>
+							<option value="Safety">Safety</option>
+							<option value="Compliance">Compliance</option>
+							<option value="Other">Other</option>
+						</select>
+					</div>
+				</div>
+
+				<div class="grid cols-2">
+					<div>
+						<label for="title">Title</label>
+						<input id="title" name="title" autocomplete="off" placeholder="Short summary" required>
+					</div>
+					<div>
+						<label for="priority">Priority</label>
+						<select id="priority" name="priority" required>
+							<option value="Routine">Routine</option>
+							<option value="Urgent">Urgent</option>
+						</select>
+					</div>
+				</div>
+
+				<label for="description">Description</label>
+				<textarea id="description" name="description" rows="8" placeholder="Describe what happened…" required></textarea>
+
+				<div class="grid cols-2" aria-label="Close controls">
+					<div>
+						<label for="closingComments">Closing comments</label>
+						<textarea id="closingComments" name="closingComments" rows="4" placeholder="Optional notes when closing…"></textarea>
+						<div class="help">Only stored when closing a report.</div>
+					</div>
+					<div>
+						<label>Status</label>
+						<div style="margin-top:8px">
+							<span id="statusBadge" class="badge open">Open</span>
+						</div>
+						<div class="help" id="statusHelp">—</div>
+					</div>
+				</div>
+
+				<div class="actions" id="editActions">
+					<button class="btn" id="saveBtn" type="submit">Save changes</button>
+					<button class="btn secondary" id="closeBtn" type="button">Close</button>
+					<button class="btn secondary" id="reopenBtn" type="button" style="display:none">Reopen</button>
+					<button class="btn danger" id="deleteBtn" type="button">Delete</button>
+				</div>
+
+				<div id="editMsg" class="alert neutral" style="display:none"></div>
+			</form>
+		</section>
+
+		<section class="card" id="json" aria-label="Raw JSON">
+			<h2>Raw JSON</h2>
+			<p class="muted">The exact object returned by the backend API (best-effort).</p>
+			<pre id="rawJson" style="white-space:pre-wrap; margin-top:12px; background:rgba(0,0,0,0.04); padding:12px; border-radius:10px; border:1px solid rgba(0,0,0,0.08);"></pre>
+		</section>
+	</main>
+</div>
+
+<script src="cap-ui.js"></script>
+<script>
+	(function () {
+		"use strict";
+
+		var reportNum = null;
+		var loadedReport = null;
+		var currentUser = CAPUI.getAuthUser();
+
+		function showMsg(id, text, kind) {
+			var el = document.getElementById(id);
+			if (!el) return;
+			el.style.display = "block";
+			el.classList.remove("ok", "bad", "neutral");
+			el.classList.add(kind || "neutral");
+			el.textContent = text;
+		}
+
+		function hideMsg(id) {
+			var el = document.getElementById(id);
+			if (!el) return;
+			el.style.display = "none";
+		}
+
+		function safeText(v) {
+			if (v === null || v === undefined) return "";
+			return String(v);
+		}
+
+		function parseNumFromUrl() {
+			try {
+				var params = new URLSearchParams(location.search || "");
+				var n = params.get("num") || params.get("q") || null;
+				if (!n && location.hash && location.hash.length > 1) {
+					n = decodeURIComponent(location.hash.slice(1));
+				}
+				if (!n) return null;
+				n = String(n).trim();
+				if (!/^\d{1,10}$/.test(n)) return n; // allow backend to reject, but keep
+				return n;
+			} catch (_e) {
+				return null;
+			}
+		}
+
+		function normalizeLevel(lvl) {
+			var n = parseInt(lvl, 10);
+			if (n === 0) return 3; // legacy
+			if (!Number.isFinite(n)) return 999;
+			return n;
+		}
+
+		function canEditReports() {
+			if (!currentUser) return false;
+			var lvl = normalizeLevel(currentUser.level);
+			return lvl === 1 || lvl === 2;
+		}
+
+		function setFormDisabled(disabled) {
+			["person", "category", "title", "priority", "description", "closingComments"].forEach(function (id) {
+				var el = document.getElementById(id);
+				if (el) el.disabled = !!disabled;
+			});
+
+			var actions = document.getElementById("editActions");
+			if (actions) actions.style.display = disabled ? "none" : "flex";
+		}
+
+		function isClosed(r) {
+			return Boolean(r && (r.closed_at_utc ?? r.closedAtUtc ?? r.closed_at ?? r.closedAt));
+		}
+
+		function updateStatusBadge(r) {
+			var badge = document.getElementById("statusBadge");
+			var help = document.getElementById("statusHelp");
+			var closeBtn = document.getElementById("closeBtn");
+			var reopenBtn = document.getElementById("reopenBtn");
+			if (!badge || !help) return;
+
+			if (isClosed(r)) {
+				badge.className = "badge closed";
+				badge.textContent = "Closed";
+				help.textContent = "Closed by " + safeText(r.closed_by || "—") + " at " + safeText(r.closed_at_utc || "—");
+				if (closeBtn) closeBtn.style.display = "none";
+				if (reopenBtn) reopenBtn.style.display = "inline-flex";
+			} else {
+				badge.className = "badge open";
+				badge.textContent = "Open";
+				help.textContent = "Opened by " + safeText(r.opened_by || "—") + " at " + safeText(r.created_at_utc || "—");
+				if (closeBtn) closeBtn.style.display = "inline-flex";
+				if (reopenBtn) reopenBtn.style.display = "none";
+			}
+		}
+
+		function fillForm(r) {
+			loadedReport = r;
+
+			document.getElementById("reportTitle").textContent = "Report #" + safeText(r.num);
+			document.getElementById("reportSub").textContent = safeText(r.title || "—") + " • " + safeText(r.person || "—");
+			document.getElementById("person").value = safeText(r.person);
+			document.getElementById("category").value = safeText(r.category || "Incident");
+			document.getElementById("title").value = safeText(r.title);
+			document.getElementById("priority").value = safeText(r.priority || "Routine");
+			document.getElementById("description").value = safeText(r.description);
+			document.getElementById("closingComments").value = safeText(r.closing_comments || "");
+
+			updateStatusBadge(r);
+
+			document.getElementById("rawJson").textContent = JSON.stringify(r, null, 2);
+
+			var hint = document.getElementById("editHint");
+			if (hint) {
+				if (!currentUser) hint.textContent = "Log in to view reports.";
+				else if (canEditReports()) hint.textContent = "You can edit fields, close/reopen, or delete this report.";
+				else hint.textContent = "You can view this report, but you don't have permission to edit, close, or delete it.";
+			}
+
+			setFormDisabled(!canEditReports());
+		}
+
+		function buildPatchFromForm() {
+			if (!loadedReport) return {};
+
+			var patch = {};
+			var person = (document.getElementById("person").value || "").trim();
+			var title = (document.getElementById("title").value || "").trim();
+			var category = (document.getElementById("category").value || "").trim();
+			var priority = (document.getElementById("priority").value || "").trim();
+			var description = (document.getElementById("description").value || "").trim();
+
+			if (person !== safeText(loadedReport.person)) patch.person = person;
+			if (title !== safeText(loadedReport.title)) patch.title = title;
+			if (category !== safeText(loadedReport.category)) patch.category = category;
+			if (priority !== safeText(loadedReport.priority)) patch.priority = priority;
+			if (description !== safeText(loadedReport.description)) patch.description = description;
+
+			return patch;
+		}
+
+		async function loadMe() {
+			var resp = await CAPUI.apiGet("/api/auth/me");
+			if (resp.ok && resp.data && resp.data.user) {
+				currentUser = resp.data.user;
+				CAPUI.setAuthUser(resp.data.user);
+				return;
+			}
+			if (resp.status === 401) {
+				currentUser = null;
+				CAPUI.clearAuthUser();
+			}
+		}
+
+		async function loadReport() {
+			hideMsg("topMsg");
+			hideMsg("editMsg");
+
+			if (!reportNum) {
+				showMsg("topMsg", "Missing report number. Open this page from Reports, or use ?num=123456.", "bad");
+				return;
+			}
+
+			await loadMe();
+
+			var resp = await CAPUI.apiGet("/api/reports/" + encodeURIComponent(reportNum));
+			if (resp.ok && resp.data) {
+				fillForm(resp.data);
+				return;
+			}
+
+			if (resp.status === 401) {
+				showMsg("topMsg", "Not logged in. Go to Login first.", "bad");
+				setFormDisabled(true);
+				return;
+			}
+
+			if (resp.status === 403) {
+				showMsg("topMsg", "You are not allowed to view this report.", "bad");
+				setFormDisabled(true);
+				return;
+			}
+
+			if (resp.status === 404) {
+				showMsg("topMsg", "Report #" + reportNum + " not found.", "bad");
+				setFormDisabled(true);
+				return;
+			}
+
+			showMsg("topMsg", "Could not load report (status " + resp.status + ").", "neutral");
+			setFormDisabled(true);
+		}
+
+		async function onSave(evt) {
+			evt.preventDefault();
+			hideMsg("editMsg");
+
+			if (!canEditReports()) {
+				showMsg("editMsg", "You don't have permission to edit reports.", "bad");
+				return;
+			}
+
+			var patch = buildPatchFromForm();
+			if (!patch || Object.keys(patch).length === 0) {
+				showMsg("editMsg", "No changes to save.", "neutral");
+				return;
+			}
+
+			var resp = await CAPUI.apiJson("PATCH", "/api/reports/" + encodeURIComponent(reportNum), patch);
+			if (resp.ok && resp.data) {
+				showMsg("editMsg", "Saved.", "ok");
+				fillForm(resp.data);
+				return;
+			}
+
+			showMsg("editMsg", "Save failed (status " + resp.status + ").", resp.status === 401 || resp.status === 403 ? "bad" : "neutral");
+		}
+
+		async function onClose() {
+			hideMsg("editMsg");
+			if (!canEditReports()) {
+				showMsg("editMsg", "You don't have permission to close reports.", "bad");
+				return;
+			}
+			if (!loadedReport || isClosed(loadedReport)) {
+				showMsg("editMsg", "Report is already closed.", "neutral");
+				return;
+			}
+
+			if (!confirm("Close report #" + reportNum + "?")) return;
+
+			var comments = (document.getElementById("closingComments").value || "").trim();
+			var payload = { closed: true };
+			if (comments) payload.closing_comments = comments;
+
+			var resp = await CAPUI.apiJson("PATCH", "/api/reports/" + encodeURIComponent(reportNum), payload);
+			if (resp.ok && resp.data) {
+				showMsg("editMsg", "Report closed.", "ok");
+				fillForm(resp.data);
+				return;
+			}
+
+			showMsg("editMsg", "Close failed (status " + resp.status + ").", resp.status === 401 || resp.status === 403 ? "bad" : "neutral");
+		}
+
+		async function onReopen() {
+			hideMsg("editMsg");
+			if (!canEditReports()) {
+				showMsg("editMsg", "You don't have permission to reopen reports.", "bad");
+				return;
+			}
+			if (!loadedReport || !isClosed(loadedReport)) {
+				showMsg("editMsg", "Report is already open.", "neutral");
+				return;
+			}
+
+			if (!confirm("Reopen report #" + reportNum + "?")) return;
+
+			var resp = await CAPUI.apiJson("PATCH", "/api/reports/" + encodeURIComponent(reportNum), { closed: false });
+			if (resp.ok && resp.data) {
+				showMsg("editMsg", "Report reopened.", "ok");
+				fillForm(resp.data);
+				return;
+			}
+
+			showMsg("editMsg", "Reopen failed (status " + resp.status + ").", resp.status === 401 || resp.status === 403 ? "bad" : "neutral");
+		}
+
+		async function onDelete() {
+			hideMsg("editMsg");
+			if (!canEditReports()) {
+				showMsg("editMsg", "You don't have permission to delete reports.", "bad");
+				return;
+			}
+			if (!confirm("Delete report #" + reportNum + "? This cannot be undone.")) return;
+
+			var resp = await CAPUI.apiJson("DELETE", "/api/reports/" + encodeURIComponent(reportNum));
+			if (resp.ok) {
+				showMsg("editMsg", "Report deleted.", "ok");
+				setTimeout(function () {
+					location.href = "reports.html";
+				}, 700);
+				return;
+			}
+
+			showMsg("editMsg", "Delete failed (status " + resp.status + ").", resp.status === 401 || resp.status === 403 ? "bad" : "neutral");
+		}
+
+		CAPUI.markActiveNav();
+		CAPUI.connectLiveState(function (state) {
+			CAPUI.applyLiveStateToCommonBadges(state);
+		});
+
+		reportNum = parseNumFromUrl();
+
+		document.getElementById("reloadBtn").addEventListener("click", loadReport);
+		document.getElementById("editForm").addEventListener("submit", onSave);
+		document.getElementById("closeBtn").addEventListener("click", onClose);
+		document.getElementById("reopenBtn").addEventListener("click", onReopen);
+		document.getElementById("deleteBtn").addEventListener("click", onDelete);
+
+		loadReport();
+	})();
+</script>
+
+</body>
+</html>
